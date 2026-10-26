@@ -623,10 +623,6 @@
   <div class="who" id="who"></div>
   <h4>REPORTS</h4>
   <nav id="sideNav">
-    <a href="/" data-page="home">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>
-      Home
-    </a>
     <a href="/" data-page="sales">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       Performance<span class="chev-btn" role="button" tabindex="0" aria-label="Show or hide the Performance reports" title="Show / hide"><span class="chev" aria-hidden="true"></span></span>
@@ -718,9 +714,6 @@
         <button data-side="ar">Accounts Receivable</button><button data-side="ap">Accounts Payable</button>
       </div>
     </div>
-  </div>
-  <div class="page-head hidden" id="homeHead">
-    <div class="ph-text"><h2>Home</h2><p class="sub"></p></div>
   </div>
   <div class="page-head hidden" id="mrHead">
     <div class="ph-text"><h2 id="mrTitle">M&amp;R Operations</h2><p class="sub" id="mrSub">Loading…</p></div>
@@ -1578,10 +1571,10 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { home: "Home", sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { home: "Welcome", sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
-let currentPage = "home";   // after sign-in the Home page (port animation) shows first
+let currentPage = "home";   // after sign-in the port animation shows first (no menu item; a report opens from the menu)
 function route(next) {
   if (next) currentPage = next;
   if (location.hash || location.pathname !== "/" || location.search) history.replaceState(null, "", "/");
@@ -1597,7 +1590,6 @@ function route(next) {
   document.title = `${PAGES[page]} · SAR ISO Tank SG`;
   $("app").classList.toggle("hidden", page !== "sales");
   $("homePage").classList.toggle("hidden", page !== "home");
-  $("homeHead").classList.toggle("hidden", page !== "home");
   $("adminPage").classList.toggle("hidden", page !== "admin");
   $("usagePage").classList.toggle("hidden", page !== "usage");
   $("mrPage").classList.toggle("hidden", page !== "mr");
