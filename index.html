@@ -408,7 +408,9 @@
 
   /* ---------- tank deployment ---------- */
   #depPage { align-content: start; }
-  .kpis.dep-kpis, .kpis.quo-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .kpis.dep-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .kpis.quo-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }   /* the 3 Quotation cards share the full width */
+  @media (max-width: 640px) { .kpis.quo-kpis { grid-template-columns: 1fr; } }
   .pivot th .wk-date, .dep-table th .wk-date { display: block; font-weight: 500; font-size: 10px; opacity: .7; text-transform: none; letter-spacing: 0; }
   .dep-table th, .dep-table td { white-space: nowrap; padding: 8px 10px; }
   .dep-table th { font-size: 10.5px; text-align: right; }
@@ -434,7 +436,7 @@
   .dep-table tbody tr:hover { background: #EFF4FF; }
   .dep-table .tg { margin-right: 6px; }
   .bl-tanks { max-width: 340px; overflow: hidden; text-overflow: ellipsis; font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--ink-soft); }
-  @media (max-width: 1200px) { .kpis.dep-kpis, .kpis.quo-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 1200px) { .kpis.dep-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 640px) { .kpis.dep-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .dep-table tr > :nth-child(1) { width: 170px; min-width: 170px; max-width: 170px; }
     .dep-table tr > :nth-child(2), .dep-table tr > :nth-child(3) { position: static; } }
@@ -2841,7 +2843,7 @@ const quoNum = (v) => Number(v).toLocaleString("en-US", { maximumFractionDigits:
 async function loadQuo() {
   $("quoErr").classList.add("hidden");
   $("refreshBtn").disabled = true;
-  if (!quo.data) { $("quoKpis").innerHTML = '<div class="skel"></div>'.repeat(2); $("quoSub").textContent = "Loading quotations…"; }
+  if (!quo.data) { $("quoKpis").innerHTML = '<div class="skel"></div>'.repeat(3); $("quoSub").textContent = "Loading quotations…"; }
   try {
     quo.data = await api("/api/mongo", { dataset: "quotations" });
     const months = quo.data.quotes.map((x) => x.date.slice(0, 7)).sort();
@@ -2873,8 +2875,7 @@ function quoRows() {   // oldest first, like the Syscon report (Sr No 1 = earlie
 function renderQuo() {
   if (!quo.data) return;
   const rows = quoRows(), base = rows, dash = '<span class="dash">—</span>';
-  const sync = quo.data.lastSync ? ` · last synced ${new Date(quo.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST` : "";
-  $("quoSub").textContent = `SAR Global quotations (and the old SAR LOGISOLUTIONS PTE. LTD. for Jan-26) from SARFD (tblRateRequest, Job No from tblJob)${sync}`;
+  $("quoSub").textContent = "";   // no subtitle under "Quotation" (only "Loading…" while the data loads)
   // KPIs follow the table (months, search, column filters). Converted = the quotation has a Job No in tblJob.
   const conv = base.filter((x) => x.jobs.length).length, pct = base.length ? (100 * conv / base.length).toFixed(1) : "0.0";
   const follow = base.filter(quoFollowUp).length;
