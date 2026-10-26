@@ -2856,7 +2856,7 @@ function renderQuo() {
   if (!quo.data) return;
   const rows = quoRows(), dash = '<span class="dash">—</span>';
   const sync = quo.data.lastSync ? ` · last synced ${new Date(quo.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST` : "";
-  $("quoSub").textContent = `SAR Global quotations from SARFD (tblRateRequest, Job No from tblJob)${sync}`;
+  $("quoSub").textContent = `SAR Global quotations (and the old SAR LOGISOLUTIONS PTE. LTD. for Jan-26) from SARFD (tblRateRequest, Job No from tblJob)${sync}`;
   $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${monthLabel(quo.from)} – ${monthLabel(quo.to)} · amounts in USD`;
   const cell = (c, x) => {
     const v = c.g(x);

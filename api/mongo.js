@@ -463,15 +463,15 @@ async function deployDataset() {
 //                   Q rows = tank lines    -> Container Quantity = Σ qty_quantity
 //   tblJob          Job No = every job whose rateRequestNo is the quotation (comma separated)
 
-const QUOT_COMPANIES = ["SAR Global PTE Ltd"];
-const QUOT_SNAPSHOT_ID = "quotations-v1";
+const QUOT_COMPANIES = ["SAR Global PTE Ltd"];   // plus the old company's quotations in OLD_COMPANY_MONTHS (Jan-26), as in Sales / Tank Deployment
+const QUOT_SNAPSHOT_ID = "quotations-v2";
 const CARGO_SHORT = { HAZARDOUS: "HAZ", GENERAL: "GEN" };
 
 async function buildQuotations(db, lastSync) {
   const rr = db.collection("tblRateRequest");
-  const match = { companyName: { $in: QUOT_COMPANIES } };
+  const match = { companyName: { $in: [...QUOT_COMPANIES, OLD_COMPANY] } };
   const [heads, money, qty] = await Promise.all([
-    rr.find({ ...match, recordType: "H" }, { projection: { _id: 0, rateRequestNo: 1, rateRequestDate: 1, validityTo: 1,
+    rr.find({ ...match, recordType: "H" }, { projection: { _id: 0, companyName: 1, rateRequestNo: 1, rateRequestDate: 1, validityTo: 1,
       originFreeDays: 1, originDemurrageFreeDays: 1, originDemurrageRate: 1, destinationFreeDays: 1, destinationDemurrageFreeDays: 1,
       destinationDemurrageRate: 1, customerName: 1, salesExecutiveName: 1, shipperName: 1, consigneeName: 1, expectedSailDate: 1,
       plrName: 1, polName: 1, podName: 1, fpdName: 1, cargoTypeName: 1, commodity: 1, noOfPackages: 1, packageName: 1, cargoWt: 1,
@@ -492,6 +492,7 @@ async function buildQuotations(db, lastSync) {
   const quotes = [];
   for (const h of heads) {
     const date = day(h.rateRequestDate); if (!date) continue;
+    if (h.companyName === OLD_COMPANY && !OLD_COMPANY_MONTHS.includes(date.slice(0, 7))) continue;
     const m = byMoney.get(h.rateRequestNo) || { buy: 0, sell: 0 }, cargo = s(h.cargoTypeName);
     quotes.push({ no: s(h.rateRequestNo), date, validity: day(h.validityTo), jobs: byJob.get(h.rateRequestNo) || [],
       oFree: num(h.originFreeDays ?? h.originDemurrageFreeDays), oRate: num(h.originDemurrageRate),
