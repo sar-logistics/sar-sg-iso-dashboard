@@ -634,8 +634,8 @@
     <label class="f" id="toWrap">To <input type="date" id="to"></label>
     <span class="drf-divider"></span>
     <div class="seg" id="currency" aria-label="Currency"><button data-c="USD">USD</button><button data-c="INR">INR</button></div>
-    <!-- Charges filter removed from the top bar (all charges always shown); kept hidden so the code that reads it still works -->
-    <span class="ms hidden" id="chargeFilter">
+    <!-- Charges filter: applies to every Performance view (Billing Details, Agent Detail, Trade Lane Detail); starts on all charges -->
+    <span class="ms" id="chargeFilter">
       <button class="btn" id="chargeBtn" aria-haspopup="true" aria-expanded="false">Charges ▾</button>
       <div class="ms-panel hidden" id="chargePanel" role="dialog" aria-label="Filter charges">
         <input class="search" id="chargeSearch" placeholder="Search charges…">
