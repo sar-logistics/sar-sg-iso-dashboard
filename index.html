@@ -408,7 +408,6 @@
 
   /* ---------- tank deployment ---------- */
   #depPage { align-content: start; }
-  .kpi[aria-pressed="true"] { border-color: var(--accent); background: #EFF4FF; }
   .kpis.dep-kpis, .kpis.quo-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .pivot th .wk-date, .dep-table th .wk-date { display: block; font-weight: 500; font-size: 10px; opacity: .7; text-transform: none; letter-spacing: 0; }
   .dep-table th, .dep-table td { white-space: nowrap; padding: 8px 10px; }
@@ -1029,6 +1028,20 @@
       </div>
     </div>
     <div class="body"><table id="bTable" class="tank-table"></table></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="quoOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="qTitle">
+    <div class="head">
+      <div><h3 id="qTitle"></h3><div class="foot" id="qSub"></div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="search" id="qSearch" placeholder="Search quotation, job, customer, port…" style="width:240px">
+        <button class="btn" id="qXlsx">Export to Excel</button>
+        <button class="btn" id="qClose" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="body"><table id="qTable" class="tank-table"></table></div>
   </div>
 </div>
 
@@ -2154,7 +2167,7 @@ $("mClose").onclick = closeDrill;
 $("overlay").onclick = (e) => { if (e.target === $("overlay")) closeDrill(); };
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (fin.drill) closeFinDocs(); else if (dep.drill) closeBls(); else if (mr.drill) closeTanks(); else if (state.drill) closeDrill(); else if (sum.charge) closeChargeBreakdown();
+  if (fin.drill) closeFinDocs(); else if (quo.drill) closeQuotes(); else if (dep.drill) closeBls(); else if (mr.drill) closeTanks(); else if (state.drill) closeDrill(); else if (sum.charge) closeChargeBreakdown();
   else for (const id of ["userModal", "importModal"]) closeModal(id);
 });
 $("mCsv").onclick = () => {
@@ -2791,7 +2804,7 @@ $("bXlsx").onclick = () => {
 // ============================================================ Quotation
 // Same columns as the Syscon "Quotation Register" report. Built only from SARFD tables in MongoDB:
 // tblRateRequest (quotation header, charge lines → buy / sell, tank lines → container quantity) and tblJob (Job No).
-const quo = { data: null, from: "", to: "", months: [], q: "", followUp: false };
+const quo = { data: null, from: "", to: "", months: [], q: "", drill: null, drillQ: "" };
 // Follow-up list: valid until this month (validity date in the current month) and no Job No yet
 const quoFollowUp = (x) => !x.jobs.length && (x.validity || "").slice(0, 7) === thisMonth();
 const QUO_COLS = [   // h = heading, g = value, k = txt | date | num | amt, sum = totalled in the Grand Total row
@@ -2849,8 +2862,7 @@ $("quoFrom").onchange = (e) => { quo.from = e.target.value; if (quo.to < quo.fro
 $("quoTo").onchange = (e) => { quo.to = e.target.value; if (quo.from > quo.to) { quo.from = quo.to; $("quoFrom").value = quo.from; } renderQuo(); };
 $("quoSearch").oninput = (e) => { quo.q = e.target.value; renderQuo(); };
 
-const quoRows = () => (quo.followUp ? quoBaseRows().filter(quoFollowUp) : quoBaseRows());   // table rows (follow-up card on = only those)
-function quoBaseRows() {   // oldest first, like the Syscon report (Sr No 1 = earliest quotation)
+function quoRows() {   // oldest first, like the Syscon report (Sr No 1 = earliest quotation)
   const q = quo.q.toLowerCase();
   const list = (quo.data?.quotes || []).filter((x) => { const m = x.date.slice(0, 7); return m >= quo.from && m <= quo.to; })
     .filter((x) => !q || [x.no, x.jobs.join(" "), x.customer, x.shipper, x.consignee, x.plr, x.pol, x.pod, x.fpd, x.commodity, x.createdBy]
@@ -2860,20 +2872,20 @@ function quoBaseRows() {   // oldest first, like the Syscon report (Sr No 1 = ea
 }
 function renderQuo() {
   if (!quo.data) return;
-  const base = quoBaseRows(), rows = quo.followUp ? base.filter(quoFollowUp) : base, dash = '<span class="dash">—</span>';
+  const rows = quoRows(), base = rows, dash = '<span class="dash">—</span>';
   const sync = quo.data.lastSync ? ` · last synced ${new Date(quo.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST` : "";
   $("quoSub").textContent = `SAR Global quotations (and the old SAR LOGISOLUTIONS PTE. LTD. for Jan-26) from SARFD (tblRateRequest, Job No from tblJob)${sync}`;
   // KPIs follow the table (months, search, column filters). Converted = the quotation has a Job No in tblJob.
   const conv = base.filter((x) => x.jobs.length).length, pct = base.length ? (100 * conv / base.length).toFixed(1) : "0.0";
   const follow = base.filter(quoFollowUp).length;
-  $("quoKpis").innerHTML = `<div class="kpi" style="border-top-color:#1E3A8A"><div class="lbl">Number of Quotations</div><div class="val">${n0(base.length)}</div>
-      <div class="note muted">${monthLabel(quo.from)} – ${monthLabel(quo.to)}</div></div>
-    <div class="kpi" style="border-top-color:#1F8A4C"><div class="lbl">Converted Quotations</div><div class="val">${n0(conv)}</div>
-      <div class="note">${pct}% converted · ${n0(base.length - conv)} not converted</div></div>
-    <button class="kpi" id="quoFollowCard" aria-pressed="${quo.followUp}" style="border-top-color:#D98E04" title="${quo.followUp ? "Show all quotations" : "List these quotations"}">
-      <div class="lbl">Expiring This Month · No Job</div><div class="val">${n0(follow)}</div>
-      <div class="note muted">Valid until ${monthLabel(thisMonth())}, not converted yet — ${quo.followUp ? "click to show all" : "click for the follow-up list"}</div></button>`;
-  $("quoTableSub").textContent = quo.followUp ? `Follow-up list: ${n0(rows.length)} quotations valid until ${monthLabel(thisMonth())} with no Job No yet · amounts in USD` : `${n0(rows.length)} quotations · ${monthLabel(quo.from)} – ${monthLabel(quo.to)} · amounts in USD`;
+  // each card opens a pop-up table of its quotations
+  $("quoKpis").innerHTML = `<button class="kpi" data-k="all" style="border-top-color:#1E3A8A" title="Show these quotations"><div class="lbl">Number of Quotations</div><div class="val">${n0(base.length)}</div>
+      <div class="note muted">${monthLabel(quo.from)} – ${monthLabel(quo.to)}</div></button>
+    <button class="kpi" data-k="conv" style="border-top-color:#1F8A4C" title="Show the converted quotations"><div class="lbl">Converted Quotations</div><div class="val">${n0(conv)}</div>
+      <div class="note">${pct}% converted · ${n0(base.length - conv)} not converted</div></button>
+    <button class="kpi" data-k="follow" style="border-top-color:#D98E04" title="Show the follow-up list"><div class="lbl">Expiring This Month · No Job</div><div class="val">${n0(follow)}</div>
+      <div class="note muted">Valid until ${monthLabel(thisMonth())}, not converted yet</div></button>`;
+  $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${monthLabel(quo.from)} – ${monthLabel(quo.to)} · amounts in USD`;
   const cell = (c, x) => {
     const v = c.g(x);
     if (c.k === "txt") return `<td class="txt" title="${esc(v)}">${v ? esc(v) : dash}</td>`;
@@ -2889,11 +2901,51 @@ function renderQuo() {
   colFilterHead($("quoTable"), "quoTable");
 }
 colFilterRender.quoTable = () => renderQuo();
-$("quoKpis").onclick = (e) => { if (e.target.closest("#quoFollowCard")) { quo.followUp = !quo.followUp; renderQuo(); } };
+$("quoKpis").onclick = (e) => {
+  const k = e.target.closest(".kpi[data-k]")?.dataset.k; if (!k) return;
+  const range = `${monthLabel(quo.from)} – ${monthLabel(quo.to)}`;
+  if (k === "all") openQuotes(`Quotations › ${range}`, () => true);
+  if (k === "conv") openQuotes(`Converted Quotations › ${range}`, (x) => x.jobs.length > 0);
+  if (k === "follow") openQuotes(`Expiring This Month · No Job › valid until ${monthLabel(thisMonth())}`, quoFollowUp);
+};
+
+// ---- quotation pop-up (from the KPI cards): the quotations behind a card, with search, column filters and Excel export
+const QUO_POP = ["Quotation No", "Quotation Date", "Validity Date", "Job No", "Customer", "Shipper", "POL", "POD", "Cargo Type", "Commodity", "Container Quantity", "Sell Amount", "Created By"]
+  .map((h) => QUO_COLS.find((c) => c.h === h));
+function openQuotes(title, pred) { quo.drill = { title, pred }; quo.drillQ = ""; colFilterReset("qTable"); $("qSearch").value = ""; $("quoOverlay").classList.remove("hidden"); renderQuotes(); $("qSearch").focus(); }
+function quotesRows() {
+  const q = quo.drillQ.toLowerCase();
+  const list = quoRows().filter(quo.drill.pred)
+    .filter((x) => !q || [x.no, x.jobs.join(" "), x.customer, x.shipper, x.consignee, x.pol, x.pod, x.commodity, x.createdBy].some((v) => (v || "").toLowerCase().includes(q)));
+  return colFilterApply("qTable", list, QUO_POP.map((c) => c.g));
+}
+function renderQuotes() {
+  const rows = quotesRows(), dash = '<span class="dash">—</span>';
+  $("qTitle").textContent = quo.drill.title;
+  $("qSub").textContent = `${n0(rows.length)} quotations · ${n0(rows.reduce((a, x) => a + x.tanks, 0))} tanks · sell ${quoNum(rows.reduce((a, x) => a + x.sell, 0))} USD`;
+  const cell = (c, x) => { const v = c.g(x);
+    if (c.k === "txt") return `<td class="${c.h === "Quotation No" || c.h === "Job No" ? "mono" : "name"}" title="${esc(v)}">${v ? esc(v) : dash}</td>`;
+    if (c.k === "date") return `<td>${v ? shortDate(v) : dash}</td>`;
+    return `<td class="amt mono">${v == null ? dash : quoNum(v)}</td>`; };
+  $("qTable").innerHTML = `<thead><tr>${QUO_POP.map((c) => `<th${c.k === "num" || c.k === "amt" ? ' class="amt"' : ""}>${esc(c.h)}</th>`).join("")}</tr></thead><tbody>`
+    + (rows.slice(0, 1500).map((x) => `<tr>${QUO_POP.map((c) => cell(c, x)).join("")}</tr>`).join("")
+      || `<tr><td colspan="${QUO_POP.length}" style="text-align:center;padding:30px;color:#94a3b8">No matching quotations</td></tr>`) + "</tbody>";
+  colFilterHead($("qTable"), "qTable");
+}
+colFilterRender.qTable = () => renderQuotes();
+function closeQuotes() { $("quoOverlay").classList.add("hidden"); quo.drill = null; }
+$("qSearch").oninput = (e) => { quo.drillQ = e.target.value; renderQuotes(); };
+$("qClose").onclick = closeQuotes;
+$("quoOverlay").onclick = (e) => { if (e.target === $("quoOverlay")) closeQuotes(); };
+$("qXlsx").onclick = () => {
+  const d = (v) => (v ? new Date(v + "T00:00") : "");
+  const rows = quotesRows().map((x, i) => Object.fromEntries([["Sr No", i + 1], ...QUO_COLS.map((c) => [c.h, c.k === "date" ? d(c.g(x)) : c.g(x) ?? ""])]));
+  writeXlsx(`${quo.drill.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`, [["Quotations", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
+};
 $("quoXlsx").onclick = () => {
   const d = (v) => (v ? new Date(v + "T00:00") : "");
   const rows = quoRows().map((x, i) => Object.fromEntries([["Sr No", i + 1], ...QUO_COLS.map((c) => [c.h, c.k === "date" ? d(c.g(x)) : c.g(x) ?? ""])]));
-  writeXlsx(quo.followUp ? `SAR_Quotation_Follow_Up_${thisMonth()}.xlsx` : `SAR_Quotation_Register_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Register", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
+  writeXlsx(`SAR_Quotation_Register_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Register", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
 };
 
 // ============================================================ Finance
