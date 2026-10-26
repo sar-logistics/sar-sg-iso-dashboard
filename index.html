@@ -587,15 +587,14 @@
 
   .side .logo { cursor: pointer; }   /* the logo opens Home */
   /* ---- Home page: ISO tank port animation (all ids / classes prefixed pa-) ---- */
-  #homePage .pa-stage { border-radius: 10px; overflow: hidden; background: linear-gradient(#DCE7F8, #F4F8FE 70%); }
-  #homePage .pa-stage svg { display: block; width: 100%; height: auto; }
-  .pa-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
-  .pa-steps div { padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); transition: all .3s; }
-  .pa-steps b { display: block; font-size: 12.5px; color: var(--ink); margin-bottom: 2px; }
-  .pa-steps div.on { border-color: var(--accent); background: #EFF4FF; color: var(--accent-dark); }
-  .pa-steps div.on b { color: var(--accent-dark); }
-  .pa-now { margin: 10px 0 0; font-size: 13px; font-weight: 600; color: var(--accent-dark); }
-  @media (max-width: 760px) { .pa-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* full screen: fills the area beside the menu and below the top bar */
+  main#homePage { max-width: none; padding: 0; display: block; }
+  #homePage .pa-full { position: relative; height: calc(100vh - var(--topbar-h, 70px)); min-height: 320px; overflow: hidden;
+                       background: linear-gradient(#C9DAF3, #E8F0FB 55%, #F4F8FE); }
+  #homePage .pa-title { position: absolute; top: 5%; left: 0; right: 0; z-index: 1; margin: 0; padding: 0 16px; text-align: center;
+                        font-size: clamp(20px, 2.6vw, 34px); font-weight: 700; color: var(--navy, #1E3A5F); }
+  #homePage .pa-stage { position: absolute; inset: 0; }
+  #homePage .pa-stage svg { display: block; width: 100%; height: 100%; }
   .pa-spin { transform-box: fill-box; transform-origin: center; animation: paSpin .5s linear infinite paused; }
   .pa-moving .pa-spin { animation-play-state: running; }
   .pa-reverse .pa-spin { animation-direction: reverse; }
@@ -767,11 +766,10 @@
 </section>
 
 <main id="homePage" class="hidden">
-  <section class="card panel">
-    <h2>Welcome to SAR ISO Tank SG</h2>
-    <p class="sub">How an ISO tank moves from the vessel to the road. Choose a report from the menu to get started.</p>
+  <section class="pa-full">
+    <h2 class="pa-title">Welcome to SAR ISO Tank Dashboard</h2>
     <div class="pa-stage">
-      <svg id="pa-scene" viewBox="0 0 1400 330" role="img" aria-label="ISO tank discharge: ship berths, STS crane lifts the tank to a terminal chassis, RTG crane stacks it, external truck is loaded after the OCR gate and leaves">
+      <svg id="pa-scene" viewBox="0 -230 1400 560" preserveAspectRatio="xMidYMax meet" role="img" aria-label="ISO tank discharge: ship berths, STS crane lifts the tank to a terminal chassis, RTG crane stacks it, external truck is loaded after the OCR gate and leaves">
         <defs>
           <linearGradient id="pa-tankBody" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stop-color="#FFFFFF"/><stop offset=".45" stop-color="#E6ECF5"/><stop offset="1" stop-color="#B9C6DA"/>
@@ -817,6 +815,12 @@
         <g id="pa-all">
           <!-- sky -->
           <g class="pa-cloud" fill="#fff" opacity=".9">
+            <g><ellipse cx="420" cy="-150" rx="46" ry="14"/><ellipse cx="452" cy="-160" rx="28" ry="12"/></g>
+            <g><ellipse cx="1000" cy="-110" rx="52" ry="15"/><ellipse cx="1036" cy="-120" rx="30" ry="13"/></g>
+            <g><ellipse cx="200" cy="-60" rx="30" ry="10"/></g>
+            <g transform="translate(1400 0)"><ellipse cx="420" cy="-150" rx="46" ry="14"/><ellipse cx="452" cy="-160" rx="28" ry="12"/></g>
+            <g transform="translate(1400 0)"><ellipse cx="1000" cy="-110" rx="52" ry="15"/><ellipse cx="1036" cy="-120" rx="30" ry="13"/></g>
+            <g transform="translate(1400 0)"><ellipse cx="200" cy="-60" rx="30" ry="10"/></g>
             <g><ellipse cx="160" cy="40" rx="36" ry="12"/><ellipse cx="184" cy="32" rx="24" ry="11"/></g>
             <g><ellipse cx="760" cy="40" rx="40" ry="12"/><ellipse cx="788" cy="32" rx="24" ry="10"/></g>
             <g><ellipse cx="1180" cy="62" rx="34" ry="11"/></g>
@@ -862,9 +866,9 @@
           <rect x="1090" y="233" width="310" height="34" fill="#3B4A61"/>                   <!-- gate lane / highway -->
           <g fill="#F8FAFC"><rect x="1230" y="248" width="40" height="4" rx="2"/><rect x="1300" y="248" width="40" height="4" rx="2"/><rect x="1370" y="248" width="40" height="4" rx="2"/></g>
           <g fill="#F8FAFC" opacity=".8"><rect x="460" y="282" width="40" height="4"/><rect x="560" y="282" width="40" height="4"/><rect x="660" y="282" width="40" height="4"/><rect x="760" y="282" width="40" height="4"/><rect x="860" y="282" width="40" height="4"/><rect x="960" y="282" width="40" height="4"/></g>
-          <text x="1380" y="300" text-anchor="end" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="11" fill="#475569" letter-spacing="1">HIGHWAY →</text>
-          <text x="900" y="310" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="11" fill="#64748B" letter-spacing="1">CONTAINER YARD</text>
-          <text x="540" y="310" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="11" fill="#64748B" letter-spacing="1">BERTH</text>
+          
+          
+          
           <g fill="#334155"><rect x="416" y="240" width="8" height="20" rx="2"/><rect x="416" y="278" width="8" height="20" rx="2"/></g>
           <rect x="428" y="218" width="10" height="12" rx="3" fill="#1E3A5F"/>   <!-- bollards -->
           <rect x="430" y="219" width="6" height="11" rx="2" fill="#1E3A5F" transform="translate(-36 0)" opacity="0"/>
@@ -884,13 +888,13 @@
             <rect x="750" y="220" width="21" height="10" rx="3" fill="#1F2937"/><rect x="1026" y="220" width="21" height="10" rx="2" fill="#1F2937"/>
             <rect x="1000" y="70" width="44" height="18" rx="2" fill="#B45309"/>
           </g>
-          <text x="1022" y="83" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="9" fill="#fff">RTG</text>
+          
 
           <!-- OCR gate portal + barrier -->
           <g>
             <rect x="1118" y="150" width="8" height="84" fill="#475569"/><rect x="1186" y="150" width="8" height="84" fill="#475569"/>
             <rect x="1112" y="140" width="88" height="14" rx="3" fill="#1E3A5F"/>
-            <text x="1156" y="150" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="8.5" fill="#fff" letter-spacing="1">OCR GATE</text>
+            
             <circle cx="1132" cy="160" r="4" fill="#1F2937"/><circle cx="1180" cy="160" r="4" fill="#1F2937"/>
             <rect id="pa-scan" x="1126" y="154" width="60" height="78" fill="#38BDF8" opacity="0"/>
             <rect x="1204" y="208" width="8" height="24" rx="2" fill="#475569"/>
@@ -931,7 +935,7 @@
             <rect x="535" y="4" width="10" height="24" fill="#2C4E82"/>
             <rect x="200" y="26" width="522" height="12" rx="2" fill="#2C4E82"/>
             <rect x="600" y="10" width="64" height="18" rx="2" fill="#1E3A5F"/>
-            <text x="632" y="23" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="9" fill="#fff">STS</text>
+            
             <circle class="pa-lamp" cx="206" cy="24" r="3" fill="#EF4444"/>
             <rect id="pa-trolleySTS" y="36" width="44" height="12" rx="2" fill="#1E3A5F"/>
           </g>
@@ -947,13 +951,6 @@
         </g>
       </svg>
     </div>
-    <div class="pa-steps" id="pa-steps">
-      <div><b>⚓ 1 · Vessel berthing</b>Tug guides the ship in, mooring lines secured, manifest cleared</div>
-      <div><b>🏗️ 2 · Vessel discharge</b>Twistlocks unlocked, STS spreader locks the corner castings and hoists</div>
-      <div><b>🚚 3 · Quay-side transfer</b>Lowered onto the terminal chassis, locked, moved to the yard, stacked by the RTG</div>
-      <div><b>🚦 4 · Gate &amp; final truck loading</b>OCR gate check, RTG loads the truck, twistlocks &amp; safety checks, exit to highway</div>
-    </div>
-    <p class="pa-now" id="pa-now"></p>
   </section>
 </main>
 
@@ -3697,17 +3694,7 @@ const TRUCK_FROM = 1460, TRUCK_OUT = 1520;
 const LOCKED = "#F59E0B", OPEN = "#22C55E";
 
 // ---- call-out badges ----
-const BADGES = [
-  // [from, to, x, y, text, colour]
-  [5.2, 8.0, 150, 70, "✓ Moored · manifest cleared", "#16A34A"],
-  [8.0, 10.0, 210, 92, "Twistlocks unlocked", "#16A34A"],
-  [11.2, 13.0, 330, 52, "Spreader locked on corner castings", "#2C4E82"],
-  [16.3, 18.2, 470, 128, "Locked onto terminal chassis", "#D97706"],
-  [23.8, 25.6, 880, 60, "Stacked in the yard by the RTG", "#D97706"],
-  [25.0, 27.6, 1090, 116, "OCR: container ID ✓  weight ✓", "#0284C7"],
-  [32.6, 35.0, 740, 128, "Twistlocks locked · gauges ✓ · Hazmat placard ✓", "#16A34A"],
-  [35.2, 37.0, 1210, 196, "Exit to highway", "#2C4E82"],
-];
+const BADGES = [];   // no call-out text on the landing animation
 const NS = "http://www.w3.org/2000/svg";
 const badgeEls = BADGES.map(([, , x, y, text, col]) => {
   const g = document.createElementNS(NS, "g"); g.setAttribute("class", "pa-badge"); g.setAttribute("opacity", 0);
@@ -3827,17 +3814,6 @@ function frame(t) {
 
   // badges
   BADGES.forEach(([a, b], i) => { const o = between(t, a, b) ? Math.min(seg(t, a, a + .3), 1 - seg(t, b - .3, b)) : 0; badgeEls[i].setAttribute("opacity", o.toFixed(2)); });
-
-  // step strip + live text
-  const stepNo = t < 8 ? 0 : t < 14.6 ? 1 : t < 24.4 ? 2 : 3;
-  [...$("pa-steps").children].forEach((d, i) => d.classList.toggle("on", i === stepNo));
-  $("pa-now").textContent =
-    t < 5 ? "Harbour tug guiding the ship to the berth…" : t < 6 ? "Mooring lines secured" : t < 8 ? "Customs / terminal system clear the manifest" :
-    t < 8.6 ? "Stevedores unlock the twistlocks" : t < 11.4 ? "STS spreader lowers and locks the four corner castings" : t < 14.6 ? "Hoisting the ISO tank over the quay…" :
-    t < 16.3 ? "Lowering onto the terminal chassis · twistlocks locked" : t < 19.6 ? "Terminal tractor moving the tank to the yard…" :
-    t < 24.4 ? "RTG crane places the tank in the yard stack" : t < 28.4 ? "External truck at the OCR gate: ID and weight verified" :
-    t < 33 ? "RTG lowers the tank onto the truck's skeletal chassis" : t < 35 ? "Driver locks all four twistlocks, checks gauges and Hazmat placards" :
-    "Truck exits the gate onto the highway";
 
   // fade around the loop point
   const fade = t > 37.2 ? 1 - seg(t, 37.2, 37.9) : t < .4 ? seg(t, 0, .4) : 1;
