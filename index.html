@@ -408,7 +408,7 @@
 
   /* ---------- tank deployment ---------- */
   #depPage { align-content: start; }
-  .kpis.dep-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .kpis.dep-kpis, .kpis.quo-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .pivot th .wk-date, .dep-table th .wk-date { display: block; font-weight: 500; font-size: 10px; opacity: .7; text-transform: none; letter-spacing: 0; }
   .dep-table th, .dep-table td { white-space: nowrap; padding: 8px 10px; }
   .dep-table th { font-size: 10.5px; text-align: right; }
@@ -434,7 +434,7 @@
   .dep-table tbody tr:hover { background: #EFF4FF; }
   .dep-table .tg { margin-right: 6px; }
   .bl-tanks { max-width: 340px; overflow: hidden; text-overflow: ellipsis; font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--ink-soft); }
-  @media (max-width: 1200px) { .kpis.dep-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 1200px) { .kpis.dep-kpis, .kpis.quo-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 640px) { .kpis.dep-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .dep-table tr > :nth-child(1) { width: 170px; min-width: 170px; max-width: 170px; }
     .dep-table tr > :nth-child(2), .dep-table tr > :nth-child(3) { position: static; } }
@@ -861,6 +861,7 @@
 
 <main id="quoPage" class="hidden">
   <div class="alert hidden" id="quoErr" role="alert"></div>
+  <div class="kpis quo-kpis" id="quoKpis"></div>
   <section class="card panel">
     <div class="tools" style="justify-content:space-between">
       <div><h2>Quotation Register</h2><p class="sub" style="margin-bottom:0" id="quoTableSub"></p></div>
@@ -2824,7 +2825,7 @@ const quoNum = (v) => Number(v).toLocaleString("en-US", { maximumFractionDigits:
 async function loadQuo() {
   $("quoErr").classList.add("hidden");
   $("refreshBtn").disabled = true;
-  if (!quo.data) $("quoSub").textContent = "Loading quotations…";
+  if (!quo.data) { $("quoKpis").innerHTML = '<div class="skel"></div>'.repeat(2); $("quoSub").textContent = "Loading quotations…"; }
   try {
     quo.data = await api("/api/mongo", { dataset: "quotations" });
     const months = quo.data.quotes.map((x) => x.date.slice(0, 7)).sort();
@@ -2838,6 +2839,7 @@ async function loadQuo() {
   } catch (e) {
     if (e.message === "signed out" || e.message === "no access") return;
     $("quoErr").textContent = "Could not load quotations: " + e.message; $("quoErr").classList.remove("hidden");
+    if (!quo.data) $("quoKpis").innerHTML = "";
   } finally { $("refreshBtn").disabled = false; }
 }
 $("quoFrom").onchange = (e) => { quo.from = e.target.value; if (quo.to < quo.from) { quo.to = quo.from; $("quoTo").value = quo.to; } renderQuo(); };
@@ -2857,6 +2859,12 @@ function renderQuo() {
   const rows = quoRows(), dash = '<span class="dash">—</span>';
   const sync = quo.data.lastSync ? ` · last synced ${new Date(quo.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST` : "";
   $("quoSub").textContent = `SAR Global quotations (and the old SAR LOGISOLUTIONS PTE. LTD. for Jan-26) from SARFD (tblRateRequest, Job No from tblJob)${sync}`;
+  // KPIs follow the table (months, search, column filters). Converted = the quotation has a Job No in tblJob.
+  const conv = rows.filter((x) => x.jobs.length).length, pct = rows.length ? (100 * conv / rows.length).toFixed(1) : "0.0";
+  $("quoKpis").innerHTML = `<div class="kpi" style="border-top-color:#1E3A8A"><div class="lbl">Number of Quotations</div><div class="val">${n0(rows.length)}</div>
+      <div class="note muted">${monthLabel(quo.from)} – ${monthLabel(quo.to)}</div></div>
+    <div class="kpi" style="border-top-color:#1F8A4C"><div class="lbl">Converted Quotations</div><div class="val">${n0(conv)}</div>
+      <div class="note">${pct}% converted · ${n0(rows.length - conv)} not converted</div></div>`;
   $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${monthLabel(quo.from)} – ${monthLabel(quo.to)} · amounts in USD`;
   const cell = (c, x) => {
     const v = c.g(x);
