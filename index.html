@@ -408,6 +408,7 @@
 
   /* ---------- tank deployment ---------- */
   #depPage { align-content: start; }
+  .kpi[aria-pressed="true"] { border-color: var(--accent); background: #EFF4FF; }
   .kpis.dep-kpis, .kpis.quo-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .pivot th .wk-date, .dep-table th .wk-date { display: block; font-weight: 500; font-size: 10px; opacity: .7; text-transform: none; letter-spacing: 0; }
   .dep-table th, .dep-table td { white-space: nowrap; padding: 8px 10px; }
@@ -2790,7 +2791,9 @@ $("bXlsx").onclick = () => {
 // ============================================================ Quotation
 // Same columns as the Syscon "Quotation Register" report. Built only from SARFD tables in MongoDB:
 // tblRateRequest (quotation header, charge lines → buy / sell, tank lines → container quantity) and tblJob (Job No).
-const quo = { data: null, from: "", to: "", months: [], q: "" };
+const quo = { data: null, from: "", to: "", months: [], q: "", followUp: false };
+// Follow-up list: valid until this month (validity date in the current month) and no Job No yet
+const quoFollowUp = (x) => !x.jobs.length && (x.validity || "").slice(0, 7) === thisMonth();
 const QUO_COLS = [   // h = heading, g = value, k = txt | date | num | amt, sum = totalled in the Grand Total row
   { h: "Quotation No", g: (x) => x.no, k: "txt" },
   { h: "Quotation Date", g: (x) => x.date, k: "date" },
@@ -2846,7 +2849,8 @@ $("quoFrom").onchange = (e) => { quo.from = e.target.value; if (quo.to < quo.fro
 $("quoTo").onchange = (e) => { quo.to = e.target.value; if (quo.from > quo.to) { quo.from = quo.to; $("quoFrom").value = quo.from; } renderQuo(); };
 $("quoSearch").oninput = (e) => { quo.q = e.target.value; renderQuo(); };
 
-function quoRows() {   // oldest first, like the Syscon report (Sr No 1 = earliest quotation)
+const quoRows = () => (quo.followUp ? quoBaseRows().filter(quoFollowUp) : quoBaseRows());   // table rows (follow-up card on = only those)
+function quoBaseRows() {   // oldest first, like the Syscon report (Sr No 1 = earliest quotation)
   const q = quo.q.toLowerCase();
   const list = (quo.data?.quotes || []).filter((x) => { const m = x.date.slice(0, 7); return m >= quo.from && m <= quo.to; })
     .filter((x) => !q || [x.no, x.jobs.join(" "), x.customer, x.shipper, x.consignee, x.plr, x.pol, x.pod, x.fpd, x.commodity, x.createdBy]
@@ -2856,16 +2860,20 @@ function quoRows() {   // oldest first, like the Syscon report (Sr No 1 = earlie
 }
 function renderQuo() {
   if (!quo.data) return;
-  const rows = quoRows(), dash = '<span class="dash">—</span>';
+  const base = quoBaseRows(), rows = quo.followUp ? base.filter(quoFollowUp) : base, dash = '<span class="dash">—</span>';
   const sync = quo.data.lastSync ? ` · last synced ${new Date(quo.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST` : "";
   $("quoSub").textContent = `SAR Global quotations (and the old SAR LOGISOLUTIONS PTE. LTD. for Jan-26) from SARFD (tblRateRequest, Job No from tblJob)${sync}`;
   // KPIs follow the table (months, search, column filters). Converted = the quotation has a Job No in tblJob.
-  const conv = rows.filter((x) => x.jobs.length).length, pct = rows.length ? (100 * conv / rows.length).toFixed(1) : "0.0";
-  $("quoKpis").innerHTML = `<div class="kpi" style="border-top-color:#1E3A8A"><div class="lbl">Number of Quotations</div><div class="val">${n0(rows.length)}</div>
+  const conv = base.filter((x) => x.jobs.length).length, pct = base.length ? (100 * conv / base.length).toFixed(1) : "0.0";
+  const follow = base.filter(quoFollowUp).length;
+  $("quoKpis").innerHTML = `<div class="kpi" style="border-top-color:#1E3A8A"><div class="lbl">Number of Quotations</div><div class="val">${n0(base.length)}</div>
       <div class="note muted">${monthLabel(quo.from)} – ${monthLabel(quo.to)}</div></div>
     <div class="kpi" style="border-top-color:#1F8A4C"><div class="lbl">Converted Quotations</div><div class="val">${n0(conv)}</div>
-      <div class="note">${pct}% converted · ${n0(rows.length - conv)} not converted</div></div>`;
-  $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${monthLabel(quo.from)} – ${monthLabel(quo.to)} · amounts in USD`;
+      <div class="note">${pct}% converted · ${n0(base.length - conv)} not converted</div></div>
+    <button class="kpi" id="quoFollowCard" aria-pressed="${quo.followUp}" style="border-top-color:#D98E04" title="${quo.followUp ? "Show all quotations" : "List these quotations"}">
+      <div class="lbl">Expiring This Month · No Job</div><div class="val">${n0(follow)}</div>
+      <div class="note muted">Valid until ${monthLabel(thisMonth())}, not converted yet — ${quo.followUp ? "click to show all" : "click for the follow-up list"}</div></button>`;
+  $("quoTableSub").textContent = quo.followUp ? `Follow-up list: ${n0(rows.length)} quotations valid until ${monthLabel(thisMonth())} with no Job No yet · amounts in USD` : `${n0(rows.length)} quotations · ${monthLabel(quo.from)} – ${monthLabel(quo.to)} · amounts in USD`;
   const cell = (c, x) => {
     const v = c.g(x);
     if (c.k === "txt") return `<td class="txt" title="${esc(v)}">${v ? esc(v) : dash}</td>`;
@@ -2881,10 +2889,11 @@ function renderQuo() {
   colFilterHead($("quoTable"), "quoTable");
 }
 colFilterRender.quoTable = () => renderQuo();
+$("quoKpis").onclick = (e) => { if (e.target.closest("#quoFollowCard")) { quo.followUp = !quo.followUp; renderQuo(); } };
 $("quoXlsx").onclick = () => {
   const d = (v) => (v ? new Date(v + "T00:00") : "");
   const rows = quoRows().map((x, i) => Object.fromEntries([["Sr No", i + 1], ...QUO_COLS.map((c) => [c.h, c.k === "date" ? d(c.g(x)) : c.g(x) ?? ""])]));
-  writeXlsx(`SAR_Quotation_Register_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Register", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
+  writeXlsx(quo.followUp ? `SAR_Quotation_Follow_Up_${thisMonth()}.xlsx` : `SAR_Quotation_Register_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Register", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
 };
 
 // ============================================================ Finance
