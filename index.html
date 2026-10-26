@@ -272,7 +272,6 @@
   /* Charges filter grouped by basket: basket row (+/−, tick-all checkbox) with its charges indented below */
   .ms-grp { display: flex; align-items: center; }
   .ms-grp label { flex: 1; font-weight: 600; }
-  .ms-grp .cnt { color: var(--ink-soft); font-weight: 500; font-size: 11px; }
   .ms-tg { width: 20px; height: 20px; flex: none; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--accent); font: inherit; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; }
   .ms-list label.kid { padding-left: 33px; }
   #chargeBtn.on { border-color: var(--accent); background: #EFF4FF; color: var(--accent-dark); }
@@ -1956,7 +1955,7 @@ function renderChargeFilter() {
     if (!hit.length) continue;
     const on = charges.filter((c) => state.charges.has(c)).length, open = !!q || chargeBasketsOpen.has(b);
     html += `<div class="ms-grp"><button class="ms-tg" type="button" data-tg="${esc(b)}" aria-expanded="${open}" title="${open ? "Hide" : "Show"} the charges">${open ? "−" : "+"}</button>`
-      + `<label><input type="checkbox" data-basket="${esc(b)}"${on === charges.length ? " checked" : ""}${on && on < charges.length ? " data-mixed" : ""}><span>${esc(b)} <span class="cnt">${on}/${charges.length}</span></span>`
+      + `<label><input type="checkbox" data-basket="${esc(b)}"${on === charges.length ? " checked" : ""}${on && on < charges.length ? " data-mixed" : ""}><span>${esc(b)}</span>`
       + `<button class="only" type="button" data-only-basket="${esc(b)}" title="Show only this basket">Only</button></label></div>`;
     if (open) html += hit.map((c) => `<label class="kid"><input type="checkbox" value="${esc(c)}"${state.charges.has(c) ? " checked" : ""}><span>${esc(c)}</span><button class="only" type="button" data-only="${esc(c)}" title="Show only this charge">Only</button></label>`).join("");
   }
