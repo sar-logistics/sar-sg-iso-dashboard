@@ -647,7 +647,7 @@
       <button class="btn" id="chargeBtn" aria-haspopup="true" aria-expanded="false">Charges ▾</button>
       <div class="ms-panel hidden" id="chargePanel" role="dialog" aria-label="Filter charges">
         <input class="search" id="chargeSearch" placeholder="Search charges…">
-        <div class="ms-actions"><button class="btn" data-ms="all">All</button><button class="btn" data-ms="none">None</button><button class="btn" data-ms="default">Default</button></div>
+        <div class="ms-actions"><button class="btn" data-ms="toggle" id="chargeAllNone">None</button></div>   <!-- one button: "All" ticks every charge, "None" clears them -->
         <div class="ms-list" id="chargeList"></div>
       </div>
     </span>
@@ -1235,7 +1235,6 @@ const NO_LANE = "No Tradelane";   // invoices without a BL / POL / POD (sub-leas
 function laneOf(l) { return l.countryLane || l.lane || null; }
 const nOtherLabel = () => (allChargesOn() ? "Total Revenue" : "Total Revenue — selected charges");
 let detailOthers = [];
-const DEFAULT_CHARGES = ["TANK RENT", "IMPORT DETENTION CHARGES", "LEASE RENT CHARGES", "EXPORT DETENTION CHARGES", "OCEAN FREIGHT CHARGES"];
 // Default month ranges (each runs to the end of the current month).
 const DEFAULT_FROM_MONTH = "2026-02";   // Tank Deployment's default start
 const PERF_FROM_MONTH = "2026-01";      // Performance Monthly View starts in January 2026
@@ -1942,9 +1941,9 @@ function billingLines() {
 const allCharges = () => [...new Set(state.lines.map((l) => l.charge))].sort();
 function renderChargeFilter() {
   const all = allCharges(), n = all.filter((c) => state.charges.has(c)).length;
-  const sameAsDefault = n === DEFAULT_CHARGES.length && DEFAULT_CHARGES.every((c) => state.charges.has(c));
-  $("chargeBtn").textContent = `Charges: ${n === all.length ? "All" : n === 0 ? "None" : sameAsDefault ? `Default (${n})` : `${n} selected`} ▾`;
+  $("chargeBtn").textContent = `Charges: ${n === all.length ? "All" : n === 0 ? "None" : `${n} selected`} ▾`;
   $("chargeBtn").classList.toggle("on", n !== all.length);
+  $("chargeAllNone").textContent = n === all.length ? "None" : "All";
   if ($("chargePanel").classList.contains("hidden")) return;
   const q = $("chargeSearch").value.toLowerCase();
   // Charges grouped by basket (chargeMappings.basket, from the "Syscon Charges" sheet); a search opens the matching baskets
@@ -1988,7 +1987,7 @@ $("chargePanel").onclick = (e) => {
   const tg = e.target.closest("button[data-tg]");
   if (tg) { const b = tg.dataset.tg; chargeBasketsOpen.has(b) ? chargeBasketsOpen.delete(b) : chargeBasketsOpen.add(b); renderChargeFilter(); return; }
   const act = e.target.closest("button[data-ms]")?.dataset.ms; if (!act) return;
-  state.charges = new Set(act === "all" ? allCharges() : act === "default" ? DEFAULT_CHARGES : []);
+  state.charges = new Set(allChargesOn() ? [] : allCharges());   // All / None toggle
   render(); renderChargeFilter();
 };
 $("chargeList").onchange = (e) => {
