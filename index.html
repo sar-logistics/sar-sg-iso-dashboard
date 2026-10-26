@@ -2533,7 +2533,7 @@ function renderInv() {
   if (inv.country && !countries.includes(inv.country)) inv.country = "";
   $("invCountry").innerHTML = '<option value="">All countries</option>' + countries.map((c) => `<option${c === inv.country ? " selected" : ""}>${esc(c)}</option>`).join("");
   const groups = invGroups(), grand = invSum(groups.map((g) => g.tot));
-  $("invSub").textContent = `${n0(grand.total)} tanks at ${n0(groups.reduce((a, g) => a + g.rows.length, 0))} depots · status from the latest movement up to ${mr.data.dataTo ? shortDate(mr.data.dataTo) : "—"} · days counted to today`;
+  $("invSub").textContent = "";   // no subtitle under the title (only "Loading tank inventory…" while the data loads)
 
   const card = (key, label, value, note, color) => `<button class="kpi" data-col="${key}" style="border-top-color:${color}"><div class="lbl">${label}</div><div class="val">${n0(value)}</div><div class="note muted">${note}</div></button>`;
   const pct = (v) => (grand.total ? `${(v / grand.total * 100).toFixed(1)}% of depot tanks` : "");
@@ -2687,9 +2687,7 @@ function renderDep() {
     : "Number of tanks on export BLs by HBL month; click a number for the BLs";
   const [k0, k1] = depKeys(), bls = depInRange();
   const tanks = bls.reduce((a, b) => a + b.tanks.length, 0);
-  const synced = dep.data.lastSync ? new Date(dep.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
-  $("depSub").textContent = `Export BLs of SAR Global PTE Ltd (Jan-26: SAR LOGISOLUTIONS) by HBL date · BLs up to ${dep.data.dataTo ? shortDate(dep.data.dataTo) : "—"} · synced ${synced}`;
-  $("depSub").title = $("depSub").textContent;
+  $("depSub").textContent = ""; $("depSub").title = "";   // no subtitle under the title (only "Loading BLs…" while the data loads)
   $("depTitle").textContent = `Tanks Deployed — ${depLabel[k0]} › ${depLabel[k1]}`;
   $("depSearch").placeholder = `Search ${depLabel[k0].toLowerCase()} or ${depLabel[k1].toLowerCase()}…`;
 
@@ -3015,11 +3013,7 @@ function renderFin() {
   const S = FIN_SIDES[fin.side];
   for (const b of $("finTabs").children) b.setAttribute("aria-pressed", b.dataset.side === fin.side);
   $("finTitle").textContent = S.title; $("finTableTitle").textContent = S.table;
-  const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  const synced = fin.data.lastSync ? new Date(fin.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
-  const ranged = finRanged();
-  $("finSub").textContent = `Open invoices of ${FIN_CO_LABEL[fin.co]}${ranged ? ` dated ${monthLabel(fin.from)} – ${monthLabel(fin.to)}` : ""} · ageing as on ${today} · invoices up to ${fin.data.dataTo ? shortDate(fin.data.dataTo) : "—"} · synced ${synced}`;
-  $("finSub").title = $("finSub").textContent;
+  $("finSub").textContent = ""; $("finSub").title = "";   // no subtitle under the title (only "Loading…" while the data loads)
   $("finFoot").innerHTML = `Ageing columns = open invoices (invoice amount less what has been knocked off against them), aged by days past the due date: Not Due up to 30 days, then over 30, 60 and 90 days.${fin.side === "ap" ? " Payables are shown as negative amounts, as in Syscon." : ""}
     From / To pick open invoices by invoice date.`;
 
