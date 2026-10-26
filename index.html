@@ -647,7 +647,7 @@
       <button class="btn" id="chargeBtn" aria-haspopup="true" aria-expanded="false">Charges ▾</button>
       <div class="ms-panel hidden" id="chargePanel" role="dialog" aria-label="Filter charges">
         <input class="search" id="chargeSearch" placeholder="Search charges…">
-        <div class="ms-actions"><button class="btn" data-ms="toggle" id="chargeAllNone">None</button></div>   <!-- one button: "All" ticks every charge, "None" clears them -->
+        <div class="ms-actions"><button class="btn" data-ms="reset" id="chargeReset" title="Select all charges">Reset</button></div>
         <div class="ms-list" id="chargeList"></div>
       </div>
     </span>
@@ -1943,7 +1943,6 @@ function renderChargeFilter() {
   const all = allCharges(), n = all.filter((c) => state.charges.has(c)).length;
   $("chargeBtn").textContent = `Charges: ${n === all.length ? "All" : n === 0 ? "None" : `${n} selected`} ▾`;
   $("chargeBtn").classList.toggle("on", n !== all.length);
-  $("chargeAllNone").textContent = n === all.length ? "None" : "All";
   if ($("chargePanel").classList.contains("hidden")) return;
   const q = $("chargeSearch").value.toLowerCase();
   // Charges grouped by basket (chargeMappings.basket, from the "Syscon Charges" sheet); a search opens the matching baskets
@@ -1987,7 +1986,7 @@ $("chargePanel").onclick = (e) => {
   const tg = e.target.closest("button[data-tg]");
   if (tg) { const b = tg.dataset.tg; chargeBasketsOpen.has(b) ? chargeBasketsOpen.delete(b) : chargeBasketsOpen.add(b); renderChargeFilter(); return; }
   const act = e.target.closest("button[data-ms]")?.dataset.ms; if (!act) return;
-  state.charges = new Set(allChargesOn() ? [] : allCharges());   // All / None toggle
+  state.charges = new Set(allCharges());   // Reset: back to every charge
   render(); renderChargeFilter();
 };
 $("chargeList").onchange = (e) => {
