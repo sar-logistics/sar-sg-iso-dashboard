@@ -584,6 +584,36 @@
     .drf-divider { display: none; }
     .f select { min-width: 0; }
   }
+
+  .side .logo { cursor: pointer; }   /* the logo opens Home */
+  /* ---- Home page: ISO tank port animation (all ids / classes prefixed pa-) ---- */
+  #homePage .pa-stage { border-radius: 10px; overflow: hidden; background: linear-gradient(#DCE7F8, #F4F8FE 70%); }
+  #homePage .pa-stage svg { display: block; width: 100%; height: auto; }
+  .pa-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .pa-steps div { padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); transition: all .3s; }
+  .pa-steps b { display: block; font-size: 12.5px; color: var(--ink); margin-bottom: 2px; }
+  .pa-steps div.on { border-color: var(--accent); background: #EFF4FF; color: var(--accent-dark); }
+  .pa-steps div.on b { color: var(--accent-dark); }
+  .pa-now { margin: 10px 0 0; font-size: 13px; font-weight: 600; color: var(--accent-dark); }
+  @media (max-width: 760px) { .pa-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .pa-spin { transform-box: fill-box; transform-origin: center; animation: paSpin .5s linear infinite paused; }
+  .pa-moving .pa-spin { animation-play-state: running; }
+  .pa-reverse .pa-spin { animation-direction: reverse; }
+  @keyframes paSpin { to { transform: rotate(360deg); } }
+  .pa-wave-a { animation: paWave 6s linear infinite; }
+  .pa-wave-b { animation: paWave 9s linear infinite reverse; }
+  @keyframes paWave { to { transform: translateX(-100px); } }
+  .pa-cloud { animation: paCloud 70s linear infinite; }
+  @keyframes paCloud { to { transform: translateX(-1400px); } }
+  .pa-smoke circle { opacity: 0; transform-box: fill-box; transform-origin: center; }
+  .pa-moving .pa-smoke circle { animation: paSmoke 1.4s ease-out infinite; }
+  .pa-moving .pa-smoke circle:nth-child(2) { animation-delay: .45s; }
+  .pa-moving .pa-smoke circle:nth-child(3) { animation-delay: .9s; }
+  @keyframes paSmoke { 0% { opacity: .55; transform: translate(0, 0) scale(.6); } 100% { opacity: 0; transform: translate(-18px, -14px) scale(1.8); } }
+  .pa-lamp { animation: paBlink 1s steps(2) infinite; }
+  @keyframes paBlink { 50% { opacity: .15; } }
+  .pa-badge text { font-family: "Plus Jakarta Sans", sans-serif; font-size: 12px; font-weight: 700; fill: #fff; }
+  @media (prefers-reduced-motion: reduce) { #homePage * { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -593,6 +623,10 @@
   <div class="who" id="who"></div>
   <h4>REPORTS</h4>
   <nav id="sideNav">
+    <a href="/" data-page="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>
+      Home
+    </a>
     <a href="/" data-page="sales">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       Performance<span class="chev-btn" role="button" tabindex="0" aria-label="Show or hide the Performance reports" title="Show / hide"><span class="chev" aria-hidden="true"></span></span>
@@ -685,6 +719,9 @@
       </div>
     </div>
   </div>
+  <div class="page-head hidden" id="homeHead">
+    <div class="ph-text"><h2>Home</h2><p class="sub"></p></div>
+  </div>
   <div class="page-head hidden" id="mrHead">
     <div class="ph-text"><h2 id="mrTitle">M&amp;R Operations</h2><p class="sub" id="mrSub">Loading…</p></div>
     <div class="ph-controls">
@@ -735,6 +772,197 @@
     <div class="login-footer">Access is restricted to authorised SAR team members.<br>Contact <b>Admin</b> to request access.</div>
   </div>
 </section>
+
+<main id="homePage" class="hidden">
+  <section class="card panel">
+    <h2>Welcome to SAR ISO Tank SG</h2>
+    <p class="sub">How an ISO tank moves from the vessel to the road. Choose a report from the menu to get started.</p>
+    <div class="pa-stage">
+      <svg id="pa-scene" viewBox="0 0 1400 330" role="img" aria-label="ISO tank discharge: ship berths, STS crane lifts the tank to a terminal chassis, RTG crane stacks it, external truck is loaded after the OCR gate and leaves">
+        <defs>
+          <linearGradient id="pa-tankBody" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#FFFFFF"/><stop offset=".45" stop-color="#E6ECF5"/><stop offset="1" stop-color="#B9C6DA"/>
+          </linearGradient>
+          <linearGradient id="pa-cabBlue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6488D6"/><stop offset="1" stop-color="#2C4E82"/></linearGradient>
+          <linearGradient id="pa-cabAmber" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FBBF24"/><stop offset="1" stop-color="#D97706"/></linearGradient>
+          <linearGradient id="pa-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6E93D4"/><stop offset="1" stop-color="#2C4E82"/></linearGradient>
+          <linearGradient id="pa-quay" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D5DCE6"/><stop offset="1" stop-color="#AEB9C9"/></linearGradient>
+          <!-- the dashboard's SAR logo (white PNG, 157 × 106); #toBlue paints it in the SAR blue -->
+          <image id="pa-sarLogo" width="157" height="106" href=""/>
+          <filter id="pa-toBlue" x="0" y="0" width="1" height="1"><feFlood flood-color="#2C4E82"/><feComposite in2="SourceAlpha" operator="in"/></filter>
+          <clipPath id="pa-seaClip"><rect x="0" y="0" width="420" height="330"/></clipPath>
+          <!-- one 20ft ISO tank (300 × 104 before scaling) -->
+          <g id="pa-isoTank">
+            <rect x="0" y="0" width="300" height="104" rx="3" fill="none" stroke="#2C4E82" stroke-width="7"/>
+            <line x1="3" y1="3" x2="44" y2="52" stroke="#2C4E82" stroke-width="4"/><line x1="3" y1="101" x2="44" y2="52" stroke="#2C4E82" stroke-width="4"/>
+            <line x1="297" y1="3" x2="256" y2="52" stroke="#2C4E82" stroke-width="4"/><line x1="297" y1="101" x2="256" y2="52" stroke="#2C4E82" stroke-width="4"/>
+            <rect x="26" y="10" width="248" height="84" rx="42" fill="url(#pa-tankBody)" stroke="#8FA3C2" stroke-width="2"/>
+            <g stroke="#9DB0CC" stroke-width="2"><line x1="90" y1="12" x2="90" y2="92"/><line x1="150" y1="10" x2="150" y2="94"/><line x1="210" y1="12" x2="210" y2="92"/></g>
+            <rect x="136" y="2" width="28" height="9" rx="2" fill="#2C4E82"/>
+            <use href="#pa-sarLogo" transform="translate(106 22) scale(.56)" filter="url(#pa-toBlue)"/>
+            <g fill="#1E3A5F"><rect x="-4" y="-4" width="12" height="12" rx="1.5"/><rect x="292" y="-4" width="12" height="12" rx="1.5"/><rect x="-4" y="96" width="12" height="12" rx="1.5"/><rect x="292" y="96" width="12" height="12" rx="1.5"/></g>
+          </g>
+          <g id="pa-tankS"><use href="#pa-isoTank" transform="scale(.42)"/></g>   <!-- 126 × 44 -->
+          <g id="pa-wheel">
+            <circle r="19" fill="#1F2937"/><circle r="10" fill="#94A3B8"/>
+            <g class="pa-spin"><rect x="-1.6" y="-10" width="3.2" height="20" fill="#475569"/><rect x="-10" y="-1.6" width="20" height="3.2" fill="#475569"/><circle r="3.5" fill="#E2E8F0"/></g>
+          </g>
+          <!-- skeletal chassis truck (drawn at 1 : 0.42); cab colour set per truck -->
+          <g id="pa-chassis">
+            <rect x="236" y="176" width="360" height="10" rx="2" fill="#1E3A5F"/>
+            <rect x="250" y="168" width="14" height="10" fill="#1E3A5F"/><rect x="556" y="168" width="14" height="10" fill="#1E3A5F"/>
+            <rect x="240" y="186" width="16" height="10" fill="#1E3A5F"/>
+            <rect x="596" y="186" width="122" height="14" rx="3" fill="#1E3A5F"/>
+            <rect x="604" y="98" width="7" height="22" rx="2" fill="#475569"/>
+            <g class="pa-smoke" fill="#94A3B8"><circle cx="607" cy="92" r="7"/><circle cx="607" cy="92" r="7"/><circle cx="607" cy="92" r="7"/></g>
+            <use href="#pa-wheel" x="290" y="204"/><use href="#pa-wheel" x="334" y="204"/>
+            <use href="#pa-wheel" x="530" y="204"/><use href="#pa-wheel" x="574" y="204"/>
+            <use href="#pa-wheel" x="680" y="204"/>
+          </g>
+        </defs>
+
+        <g id="pa-all">
+          <!-- sky -->
+          <g class="pa-cloud" fill="#fff" opacity=".9">
+            <g><ellipse cx="160" cy="40" rx="36" ry="12"/><ellipse cx="184" cy="32" rx="24" ry="11"/></g>
+            <g><ellipse cx="760" cy="40" rx="40" ry="12"/><ellipse cx="788" cy="32" rx="24" ry="10"/></g>
+            <g><ellipse cx="1180" cy="62" rx="34" ry="11"/></g>
+            <g transform="translate(1400 0)"><ellipse cx="160" cy="40" rx="36" ry="12"/><ellipse cx="184" cy="32" rx="24" ry="11"/></g>
+            <g transform="translate(1400 0)"><ellipse cx="760" cy="40" rx="40" ry="12"/><ellipse cx="788" cy="32" rx="24" ry="10"/></g>
+            <g transform="translate(1400 0)"><ellipse cx="1180" cy="62" rx="34" ry="11"/></g>
+          </g>
+
+          <!-- ===== sea ===== -->
+          <rect x="0" y="230" width="420" height="100" fill="url(#pa-sea)"/>
+          <g clip-path="url(#pa-seaClip)"><g class="pa-wave-b" fill="#86A6DD" opacity=".7">
+            <path d="M0 234 q25 -6 50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 V242 H0z"/>
+          </g></g>
+
+          <!-- tug (moved by script) -->
+          <g id="pa-tug">
+            <path d="M0 236 H74 q12 0 16 10 l-8 14 H10 q-10 0 -12 -10z" fill="#C2410C"/>
+            <rect x="22" y="214" width="34" height="22" rx="3" fill="#F8FAFC" stroke="#CBD5E1"/>
+            <rect x="27" y="219" width="24" height="6" rx="2" fill="#2C4E82"/>
+            <rect x="34" y="202" width="8" height="12" fill="#1E3A5F"/>
+            <rect x="84" y="236" width="8" height="10" rx="2" fill="#1F2937"/>   <!-- push fender -->
+          </g>
+
+          <!-- ship (moved by script) -->
+          <g id="pa-ship">
+            <g id="pa-wake" fill="none" stroke="#F8FAFC" stroke-width="3" stroke-linecap="round" opacity="0">
+              <path d="M-150 250 h56"/><path d="M-170 262 h70"/><path d="M-130 240 h34"/>
+            </g>
+            <use href="#pa-tankS" x="100" y="162"/>
+            <use href="#pa-tankS" x="240" y="162"/>
+            <use href="#pa-tankS" x="100" y="118"/>
+            <rect x="26" y="128" width="56" height="78" rx="3" fill="#F8FAFC" stroke="#CBD5E1"/>
+            <g fill="#2C4E82"><rect x="33" y="137" width="42" height="8" rx="2"/><rect x="33" y="152" width="42" height="5" rx="2" opacity=".55"/><rect x="33" y="164" width="42" height="5" rx="2" opacity=".55"/></g>
+            <rect x="46" y="106" width="12" height="24" fill="#475569"/><rect x="42" y="102" width="20" height="6" rx="2" fill="#C2410C"/>
+            <path d="M0 206 H400 q16 0 24 12 l-28 42 H30 q-20 0 -26 -18z" fill="#1E3A5F"/>
+            <path d="M4 212 H408" stroke="#C2410C" stroke-width="4"/>
+            <use href="#pa-sarLogo" transform="translate(186 216) scale(.32)"/>
+          </g>
+
+          <!-- ===== quay, yard, gate, highway ===== -->
+          <rect x="420" y="230" width="980" height="100" fill="url(#pa-quay)"/>
+          <rect x="420" y="228" width="980" height="5" fill="#8C99AD"/>
+          <rect x="1090" y="233" width="310" height="34" fill="#3B4A61"/>                   <!-- gate lane / highway -->
+          <g fill="#F8FAFC"><rect x="1230" y="248" width="40" height="4" rx="2"/><rect x="1300" y="248" width="40" height="4" rx="2"/><rect x="1370" y="248" width="40" height="4" rx="2"/></g>
+          <g fill="#F8FAFC" opacity=".8"><rect x="460" y="282" width="40" height="4"/><rect x="560" y="282" width="40" height="4"/><rect x="660" y="282" width="40" height="4"/><rect x="760" y="282" width="40" height="4"/><rect x="860" y="282" width="40" height="4"/><rect x="960" y="282" width="40" height="4"/></g>
+          <text x="1380" y="300" text-anchor="end" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="11" fill="#475569" letter-spacing="1">HIGHWAY →</text>
+          <text x="900" y="310" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="11" fill="#64748B" letter-spacing="1">CONTAINER YARD</text>
+          <text x="540" y="310" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="11" fill="#64748B" letter-spacing="1">BERTH</text>
+          <g fill="#334155"><rect x="416" y="240" width="8" height="20" rx="2"/><rect x="416" y="278" width="8" height="20" rx="2"/></g>
+          <rect x="428" y="218" width="10" height="12" rx="3" fill="#1E3A5F"/>   <!-- bollards -->
+          <rect x="430" y="219" width="6" height="11" rx="2" fill="#1E3A5F" transform="translate(-36 0)" opacity="0"/>
+          <path id="pa-rope1" d="M400 212 Q418 228 433 221" fill="none" stroke="#B45309" stroke-width="2.5" stroke-dasharray="80" stroke-dashoffset="80"/>
+
+          <!-- STS crane legs -->
+          <g fill="#2C4E82">
+            <rect x="440" y="38" width="11" height="192"/><rect x="640" y="38" width="11" height="192"/>
+            <rect x="434" y="222" width="23" height="8" rx="2" fill="#1E3A5F"/><rect x="634" y="222" width="23" height="8" rx="2" fill="#1E3A5F"/>
+          </g>
+          <g stroke="#2C4E82" stroke-width="4" opacity=".55"><line x1="451" y1="60" x2="640" y2="60"/><line x1="451" y1="62" x2="520" y2="140"/><line x1="640" y1="62" x2="571" y2="140"/></g>
+
+          <!-- RTG crane (yard) legs + beam -->
+          <g fill="#D97706">
+            <rect x="756" y="96" width="9" height="134"/><rect x="1032" y="96" width="9" height="134"/>
+            <rect x="750" y="88" width="297" height="12" rx="2"/>
+            <rect x="750" y="220" width="21" height="10" rx="3" fill="#1F2937"/><rect x="1026" y="220" width="21" height="10" rx="2" fill="#1F2937"/>
+            <rect x="1000" y="70" width="44" height="18" rx="2" fill="#B45309"/>
+          </g>
+          <text x="1022" y="83" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="9" fill="#fff">RTG</text>
+
+          <!-- OCR gate portal + barrier -->
+          <g>
+            <rect x="1118" y="150" width="8" height="84" fill="#475569"/><rect x="1186" y="150" width="8" height="84" fill="#475569"/>
+            <rect x="1112" y="140" width="88" height="14" rx="3" fill="#1E3A5F"/>
+            <text x="1156" y="150" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="8.5" fill="#fff" letter-spacing="1">OCR GATE</text>
+            <circle cx="1132" cy="160" r="4" fill="#1F2937"/><circle cx="1180" cy="160" r="4" fill="#1F2937"/>
+            <rect id="pa-scan" x="1126" y="154" width="60" height="78" fill="#38BDF8" opacity="0"/>
+            <rect x="1204" y="208" width="8" height="24" rx="2" fill="#475569"/>
+            <g id="pa-barrier"><rect x="1150" y="206" width="58" height="5" rx="2" fill="#EF4444"/><rect x="1162" y="206" width="8" height="5" fill="#fff"/><rect x="1182" y="206" width="8" height="5" fill="#fff"/></g>
+          </g>
+
+          <!-- terminal tractor (amber) and external truck (blue) -->
+          <g id="pa-tractor"><g transform="scale(.42)">
+            <use href="#pa-chassis"/>
+            <path d="M600 112 h58 q20 0 30 18 l22 36 q6 10 6 22 v14 h-116z" fill="url(#pa-cabAmber)"/>
+            <path d="M612 122 h40 q10 0 16 10 l16 28 h-72z" fill="#FEF3C7"/>
+          </g></g>
+          <g id="pa-truck"><g transform="scale(.42)">
+            <use href="#pa-chassis"/>
+            <path d="M600 112 h58 q20 0 30 18 l22 36 q6 10 6 22 v14 h-116z" fill="url(#pa-cabBlue)"/>
+            <path d="M612 122 h40 q10 0 16 10 l16 28 h-72z" fill="#DCE8FA"/>
+            <rect x="704" y="168" width="14" height="8" rx="2" fill="#FDE68A"/>
+          </g></g>
+
+          <!-- the ISO tank being handled: twistlock indicators at the bottom corner castings + hazmat placard -->
+          <g id="pa-cargo">
+            <use href="#pa-tankS"/>
+            <rect id="pa-tlA" x="-3" y="38" width="8" height="8" rx="1.5" fill="#F59E0B"/>
+            <rect id="pa-tlB" x="121" y="38" width="8" height="8" rx="1.5" fill="#F59E0B"/>
+            <g id="pa-placard"><polygon points="104,4 113,13 104,22 95,13" fill="#EF4444" stroke="#fff" stroke-width="1.5"/><text x="104" y="16" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="8" fill="#fff">3</text></g>
+            <circle id="pa-gauge" cx="40" cy="4" r="4" fill="#E2E8F0" stroke="#1E3A5F" stroke-width="1.5"/>
+          </g>
+
+          <!-- hoists: cables + spreaders -->
+          <g id="pa-hoistSTS"><line class="pa-c1" stroke="#334155" stroke-width="2"/><line class="pa-c2" stroke="#334155" stroke-width="2"/><rect class="pa-sp" width="132" height="7" rx="2" fill="#F59E0B"/></g>
+          <g id="pa-hoistRTG"><line class="pa-c1" stroke="#334155" stroke-width="2"/><line class="pa-c2" stroke="#334155" stroke-width="2"/><rect class="pa-sp" width="132" height="7" rx="2" fill="#F59E0B"/></g>
+          <rect id="pa-trolleyRTG" y="98" width="40" height="10" rx="2" fill="#92400E"/>
+
+          <!-- STS boom (in front) -->
+          <g>
+            <line x1="540" y1="4" x2="206" y2="28" stroke="#2C4E82" stroke-width="3"/>
+            <line x1="540" y1="4" x2="716" y2="28" stroke="#2C4E82" stroke-width="3"/>
+            <rect x="535" y="4" width="10" height="24" fill="#2C4E82"/>
+            <rect x="200" y="26" width="522" height="12" rx="2" fill="#2C4E82"/>
+            <rect x="600" y="10" width="64" height="18" rx="2" fill="#1E3A5F"/>
+            <text x="632" y="23" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="9" fill="#fff">STS</text>
+            <circle class="pa-lamp" cx="206" cy="24" r="3" fill="#EF4444"/>
+            <rect id="pa-trolleySTS" y="36" width="44" height="12" rx="2" fill="#1E3A5F"/>
+          </g>
+
+          <!-- near waves -->
+          <g clip-path="url(#pa-seaClip)"><g class="pa-wave-a" fill="#3E63A8">
+            <path d="M0 262 q25 -8 50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 V330 H0z"/>
+          </g></g>
+          <rect x="420" y="230" width="6" height="100" fill="#8C99AD"/>
+
+          <!-- call-out badges (shown by script) -->
+          <g id="pa-badges"></g>
+        </g>
+      </svg>
+    </div>
+    <div class="pa-steps" id="pa-steps">
+      <div><b>⚓ 1 · Vessel berthing</b>Tug guides the ship in, mooring lines secured, manifest cleared</div>
+      <div><b>🏗️ 2 · Vessel discharge</b>Twistlocks unlocked, STS spreader locks the corner castings and hoists</div>
+      <div><b>🚚 3 · Quay-side transfer</b>Lowered onto the terminal chassis, locked, moved to the yard, stacked by the RTG</div>
+      <div><b>🚦 4 · Gate &amp; final truck loading</b>OCR gate check, RTG loads the truck, twistlocks &amp; safety checks, exit to highway</div>
+    </div>
+    <p class="pa-now" id="pa-now"></p>
+  </section>
+</main>
 
 <main id="app" class="hidden">
   <div class="alert hidden" id="dataError" role="alert"></div>
@@ -1315,7 +1543,7 @@ function tokenValid(t) {
 function getToken() { return idToken && tokenValid(idToken) ? idToken : null; }
 
 function showLogin(message) {
-  currentPage = "sales";
+  currentPage = "home";
   state.currency = "USD";
   idToken = null;
   for (const id of ["app", "side", "topbar", "backdrop"]) $(id).classList.add("hidden");
@@ -1350,15 +1578,15 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { home: "Home", sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
-let currentPage = "sales";
+let currentPage = "home";   // after sign-in the Home page (port animation) shows first
 function route(next) {
   if (next) currentPage = next;
   if (location.hash || location.pathname !== "/" || location.search) history.replaceState(null, "", "/");
-  let page = PAGES[currentPage] ? currentPage : "sales";
-  if ((page === "admin" || page === "usage") && !isAdmin()) page = "sales";
+  let page = PAGES[currentPage] ? currentPage : "home";
+  if ((page === "admin" || page === "usage") && !isAdmin()) page = "home";
   for (const a of document.querySelectorAll(".side nav a:not(.sub)")) {
     if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -1368,6 +1596,8 @@ function route(next) {
   $("filters").classList.toggle("hidden", page !== "sales" || !state.detail);
   document.title = `${PAGES[page]} · SAR ISO Tank SG`;
   $("app").classList.toggle("hidden", page !== "sales");
+  $("homePage").classList.toggle("hidden", page !== "home");
+  $("homeHead").classList.toggle("hidden", page !== "home");
   $("adminPage").classList.toggle("hidden", page !== "admin");
   $("usagePage").classList.toggle("hidden", page !== "usage");
   $("mrPage").classList.toggle("hidden", page !== "mr");
@@ -1401,6 +1631,7 @@ $("sideNav").addEventListener("keydown", (e) => {
 });
 function closeMenu() { $("side").classList.remove("open"); $("backdrop").classList.add("hidden"); }
 $("menuBtn").onclick = openMenu;
+document.querySelector(".side .logo").onclick = () => route("home");
 $("backdrop").onclick = closeMenu;
 for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
   if (e.target.closest(".chev-btn")) { e.preventDefault(); perfOpen = !perfOpen; markPerfSub(); return; }   // arrow: only show / hide the sub-items
@@ -3444,6 +3675,195 @@ $("importConfirm").onclick = async () => {
   try { sessionStorage.removeItem(TOKEN_KEY); } catch {}
   try { google.accounts.id.disableAutoSelect(); } catch {}
   showLogin();   // every page load (including a reload) starts at the sign-in screen
+})();
+
+// ============================================================ Home: ISO tank port operation animation
+// The vessel berths, the STS crane discharges the ISO tank onto a terminal chassis, the RTG stacks it in the yard,
+// the external truck passes the OCR gate, is loaded, checked and leaves. Positions come from a looping clock,
+// and frames are only drawn while the Home page is shown.
+(() => {
+
+const LOOP = 38;
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const ease = (p) => (p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+const easeOut = (p) => 1 - Math.pow(1 - p, 3), easeIn = (p) => p * p * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const between = (t, a, b) => t >= a && t < b;
+
+// ---- geometry (scene units) ----
+const TW = 126, TH = 44;                       // tank on screen
+const SHIP_Y0 = 0, SHIP_FROM = -560, SHIP_DOCK = -8;
+const ON_SHIP = { x: 240, y: 118 };            // cargo tank: top tier, bay nearest the quay
+const TRUCK_Y = 136.3, ON_TRUCK_DX = 110, ON_TRUCK_Y = 164;   // truck group y, tank offset / top on a chassis
+const STS_PARK = 560, STS_UP = 56, STS_TROLLEY_Y = 48;
+const RTG_PARK = 900, RTG_UP = 108, RTG_TROLLEY_Y = 108;
+const TRACTOR_STS = 367;                       // tractor parked under the STS (tank centre 540)
+const YARD_TX = 657;                           // lane slot under the RTG (tank centre 830)
+const STACK_X = 902, STACK_Y = 186;            // yard stack slot (on the ground)
+const TRUCK_FROM = 1460, TRUCK_OUT = 1520;
+const LOCKED = "#F59E0B", OPEN = "#22C55E";
+
+// ---- call-out badges ----
+const BADGES = [
+  // [from, to, x, y, text, colour]
+  [5.2, 8.0, 150, 70, "✓ Moored · manifest cleared", "#16A34A"],
+  [8.0, 10.0, 210, 92, "Twistlocks unlocked", "#16A34A"],
+  [11.2, 13.0, 330, 52, "Spreader locked on corner castings", "#2C4E82"],
+  [16.3, 18.2, 470, 128, "Locked onto terminal chassis", "#D97706"],
+  [23.8, 25.6, 880, 60, "Stacked in the yard by the RTG", "#D97706"],
+  [25.0, 27.6, 1090, 116, "OCR: container ID ✓  weight ✓", "#0284C7"],
+  [32.6, 35.0, 740, 128, "Twistlocks locked · gauges ✓ · Hazmat placard ✓", "#16A34A"],
+  [35.2, 37.0, 1210, 196, "Exit to highway", "#2C4E82"],
+];
+const NS = "http://www.w3.org/2000/svg";
+const badgeEls = BADGES.map(([, , x, y, text, col]) => {
+  const g = document.createElementNS(NS, "g"); g.setAttribute("class", "pa-badge"); g.setAttribute("opacity", 0);
+  const r = document.createElementNS(NS, "rect"), tx = document.createElementNS(NS, "text");
+  tx.setAttribute("x", x + 10); tx.setAttribute("y", y + 15); tx.textContent = text;
+  r.setAttribute("x", x); r.setAttribute("y", y); r.setAttribute("height", 22); r.setAttribute("rx", 11); r.setAttribute("fill", col);
+  g.append(r, tx); $("pa-badges").append(g);
+  r.setAttribute("width", tx.getComputedTextLength() + 20);
+  return g;
+});
+
+function hoist(id, tx, sy, trolleyY, locked) {
+  const g = $(id), sp = g.querySelector(".pa-sp");
+  sp.setAttribute("x", tx - 66); sp.setAttribute("y", sy - 7); sp.setAttribute("fill", locked ? "#16A34A" : "#F59E0B");
+  for (const [cls, dx, ex] of [["pa-c1", -14, -60], ["pa-c2", 14, 60]]) {
+    const c = g.querySelector("." + cls); c.setAttribute("x1", tx + dx); c.setAttribute("y1", trolleyY); c.setAttribute("x2", tx + ex); c.setAttribute("y2", sy - 7);
+  }
+}
+
+function frame(t) {
+  const bob = 2.2 * Math.sin(t * 1.9);
+
+  // ---------- STEP 1: tug brings the ship in (0–5), mooring lines (5–5.8), tug leaves (6–8)
+  const sp = seg(t, 0, 5), shipX = lerp(SHIP_FROM, SHIP_DOCK, easeOut(sp)), shipY = SHIP_Y0 + bob;
+  $("pa-ship").setAttribute("transform", `translate(${shipX} ${shipY})`);
+  $("pa-wake").setAttribute("opacity", (sp < 1 ? (1 - sp) * .9 : 0).toFixed(2));
+  const tugX = t < 6 ? shipX - 94 : lerp(SHIP_DOCK - 94, -260, easeIn(seg(t, 6, 8.5)));
+  $("pa-tug").setAttribute("transform", `translate(${tugX} ${bob * .7})`);
+  $("pa-rope1").setAttribute("stroke-dashoffset", (80 * (1 - seg(t, 5, 5.8))).toFixed(1));
+
+  // ---------- STEP 2: unlock twistlocks (8–8.6), STS trolley over the tank (8.6–10), lower (10–11),
+  //            lock spreader (11–11.4), hoist (11.4–12.6), travel over the quay (12.6–14.6)
+  // ---------- STEP 3: lower onto the terminal chassis (14.6–15.8), lock twistlocks (15.8–16.3), spreader up (16.3–17.2),
+  //            tractor to the yard (17.2–19.6), RTG picks it (19.6–21.4), to the stack (21.4–22.6), set down (22.6–23.6), up (23.8–24.6)
+  //            tractor returns to the berth (21.6–24.4)
+  // ---------- STEP 4: truck reverses in through the OCR gate (24.4–28.4), RTG picks from the stack (28.6–30.4),
+  //            over the truck (30.4–31.4), lowers (31.4–32.4), up (32.6–33.4), driver locks + checks (32.6–35),
+  //            barrier up, truck drives out to the highway (35–37.4)
+  const onShipX = shipX + ON_SHIP.x, onShipY = shipY + ON_SHIP.y;
+  const stsTank = TRACTOR_STS + ON_TRUCK_DX;                 // tank left x on the tractor at the berth
+  const yardTank = YARD_TX + ON_TRUCK_DX;                    // tank left x in the yard lane
+
+  // tractor
+  let tractorX, tractorMoving = false, tractorRev = false;
+  if (t < 17.2) tractorX = TRACTOR_STS;
+  else if (t < 19.6) { tractorX = lerp(TRACTOR_STS, YARD_TX, ease(seg(t, 17.2, 19.6))); tractorMoving = true; }
+  else if (t < 21.6) tractorX = YARD_TX;
+  else if (t < 24.4) { tractorX = lerp(YARD_TX, TRACTOR_STS, ease(seg(t, 21.6, 24.4))); tractorMoving = tractorRev = true; }
+  else tractorX = TRACTOR_STS;
+  $("pa-tractor").setAttribute("transform", `translate(${tractorX} ${TRUCK_Y})`);
+  $("pa-tractor").classList.toggle("pa-moving", tractorMoving && between(t, 17.25, 24.35)); $("pa-tractor").classList.toggle("pa-reverse", tractorRev);
+
+  // external truck
+  let truckX, truckMoving = false, truckRev = false;
+  if (t < 24.4) truckX = TRUCK_FROM;
+  else if (t < 28.4) { truckX = lerp(TRUCK_FROM, YARD_TX, easeOut(seg(t, 24.4, 28.4))); truckMoving = truckRev = t < 28.3; }
+  else if (t < 35) truckX = YARD_TX;
+  else { truckX = lerp(YARD_TX, TRUCK_OUT, easeIn(seg(t, 35, 37.4))); truckMoving = true; }
+  $("pa-truck").setAttribute("transform", `translate(${truckX} ${TRUCK_Y})`);
+  $("pa-truck").classList.toggle("pa-moving", truckMoving); $("pa-truck").classList.toggle("pa-reverse", truckRev);
+
+  // STS crane
+  let stsX = STS_PARK, stsY = STS_UP, stsLock = false;
+  const onTractorCx = stsTank + TW / 2, onShipCx = onShipX + TW / 2;
+  if (between(t, 8.6, 10)) stsX = lerp(STS_PARK, onShipCx, ease(seg(t, 8.6, 10)));
+  else if (between(t, 10, 11.4)) { stsX = onShipCx; stsY = lerp(STS_UP, onShipY, ease(seg(t, 10, 11))); stsLock = t >= 11; }
+  else if (between(t, 11.4, 12.6)) { stsX = onShipCx; stsY = lerp(onShipY, STS_UP, ease(seg(t, 11.4, 12.6))); stsLock = true; }
+  else if (between(t, 12.6, 14.6)) { stsX = lerp(onShipCx, onTractorCx, ease(seg(t, 12.6, 14.6))); stsLock = true; }
+  else if (between(t, 14.6, 16.3)) { stsX = onTractorCx; stsY = lerp(STS_UP, ON_TRUCK_Y, ease(seg(t, 14.6, 15.8))); stsLock = t < 15.8; }
+  else if (between(t, 16.3, 17.2)) { stsX = onTractorCx; stsY = lerp(ON_TRUCK_Y, STS_UP, ease(seg(t, 16.3, 17.2))); }
+  else if (between(t, 17.2, 18.6)) stsX = lerp(onTractorCx, STS_PARK, ease(seg(t, 17.2, 18.6)));
+  $("pa-trolleySTS").setAttribute("x", stsX - 22);
+  hoist("pa-hoistSTS", stsX, stsY, STS_TROLLEY_Y, stsLock);
+
+  // RTG crane
+  let rtgX = RTG_PARK, rtgY = RTG_UP, rtgLock = false;
+  const yardCx = yardTank + TW / 2, stackCx = STACK_X + TW / 2;
+  if (between(t, 18.4, 19.6)) rtgX = lerp(RTG_PARK, yardCx, ease(seg(t, 18.4, 19.6)));
+  else if (between(t, 19.6, 20.6)) { rtgX = yardCx; rtgY = lerp(RTG_UP, ON_TRUCK_Y, ease(seg(t, 19.6, 20.3))); rtgLock = t >= 20.3; }
+  else if (between(t, 20.6, 21.4)) { rtgX = yardCx; rtgY = lerp(ON_TRUCK_Y, RTG_UP, ease(seg(t, 20.6, 21.4))); rtgLock = true; }
+  else if (between(t, 21.4, 22.6)) { rtgX = lerp(yardCx, stackCx, ease(seg(t, 21.4, 22.6))); rtgLock = true; }
+  else if (between(t, 22.6, 23.8)) { rtgX = stackCx; rtgY = lerp(RTG_UP, STACK_Y, ease(seg(t, 22.6, 23.6))); rtgLock = t < 23.6; }
+  else if (between(t, 23.8, 24.6)) { rtgX = stackCx; rtgY = lerp(STACK_Y, RTG_UP, ease(seg(t, 23.8, 24.6))); }
+  else if (between(t, 24.6, 28.6)) rtgX = stackCx;
+  else if (between(t, 28.6, 29.8)) { rtgX = stackCx; rtgY = lerp(RTG_UP, STACK_Y, ease(seg(t, 28.6, 29.4))); rtgLock = t >= 29.4; }
+  else if (between(t, 29.8, 30.4)) { rtgX = stackCx; rtgY = lerp(STACK_Y, RTG_UP, ease(seg(t, 29.8, 30.4))); rtgLock = true; }
+  else if (between(t, 30.4, 31.4)) { rtgX = lerp(stackCx, yardCx, ease(seg(t, 30.4, 31.4))); rtgLock = true; }
+  else if (between(t, 31.4, 32.6)) { rtgX = yardCx; rtgY = lerp(RTG_UP, ON_TRUCK_Y, ease(seg(t, 31.4, 32.4))); rtgLock = t < 32.4; }
+  else if (between(t, 32.6, 33.4)) { rtgX = yardCx; rtgY = lerp(ON_TRUCK_Y, RTG_UP, ease(seg(t, 32.6, 33.4))); }
+  else if (between(t, 33.4, 34.6)) rtgX = lerp(yardCx, RTG_PARK, ease(seg(t, 33.4, 34.6)));
+  $("pa-trolleyRTG").setAttribute("x", rtgX - 20);
+  hoist("pa-hoistRTG", rtgX, rtgY, RTG_TROLLEY_Y, rtgLock);
+
+  // the cargo tank
+  let cx, cy;
+  if (t < 11.4) { cx = onShipX; cy = onShipY; }                                     // on deck
+  else if (t < 15.8) { cx = stsX - TW / 2; cy = stsY; }                             // on the STS spreader
+  else if (t < 20.6) { cx = tractorX + ON_TRUCK_DX; cy = ON_TRUCK_Y; }              // on the terminal chassis
+  else if (t < 23.6) { cx = rtgX - TW / 2; cy = rtgY; }                             // on the RTG spreader
+  else if (t < 29.8) { cx = STACK_X; cy = STACK_Y; }                                // in the yard stack
+  else if (t < 32.4) { cx = rtgX - TW / 2; cy = rtgY; }                             // on the RTG spreader
+  else { cx = truckX + ON_TRUCK_DX; cy = ON_TRUCK_Y; }                              // on the external truck
+  $("pa-cargo").setAttribute("transform", `translate(${cx.toFixed(1)} ${cy.toFixed(1)})`);
+
+  // twistlocks: locked on deck, unlocked by the stevedores, locked on each chassis, locked by the driver
+  const locked = t < 8 || between(t, 15.8, 20.3) || t >= 33;
+  for (const id of ["pa-tlA", "pa-tlB"]) $(id).setAttribute("fill", locked ? LOCKED : OPEN);
+  const checking = between(t, 33.4, 35);
+  const pulse = checking ? 1 + .25 * Math.abs(Math.sin(t * 8)) : 1;
+  $("pa-placard").setAttribute("transform", `translate(104 13) scale(${pulse}) translate(-104 -13)`);
+  $("pa-gauge").setAttribute("fill", checking && Math.sin(t * 10) > 0 ? "#22C55E" : "#E2E8F0");
+
+  // OCR gate scan and barrier
+  $("pa-scan").setAttribute("opacity", between(t, 25, 26.6) ? (.25 + .2 * Math.sin(t * 14)).toFixed(2) : 0);
+  const barrierUp = Math.max(seg(t, 24.2, 24.8) * (1 - seg(t, 26.8, 27.4)), seg(t, 34.6, 35.2) * (1 - seg(t, 37.2, 37.8)));
+  $("pa-barrier").setAttribute("transform", `rotate(${(80 * barrierUp).toFixed(1)} 1208 208)`);
+
+  // badges
+  BADGES.forEach(([a, b], i) => { const o = between(t, a, b) ? Math.min(seg(t, a, a + .3), 1 - seg(t, b - .3, b)) : 0; badgeEls[i].setAttribute("opacity", o.toFixed(2)); });
+
+  // step strip + live text
+  const stepNo = t < 8 ? 0 : t < 14.6 ? 1 : t < 24.4 ? 2 : 3;
+  [...$("pa-steps").children].forEach((d, i) => d.classList.toggle("on", i === stepNo));
+  $("pa-now").textContent =
+    t < 5 ? "Harbour tug guiding the ship to the berth…" : t < 6 ? "Mooring lines secured" : t < 8 ? "Customs / terminal system clear the manifest" :
+    t < 8.6 ? "Stevedores unlock the twistlocks" : t < 11.4 ? "STS spreader lowers and locks the four corner castings" : t < 14.6 ? "Hoisting the ISO tank over the quay…" :
+    t < 16.3 ? "Lowering onto the terminal chassis · twistlocks locked" : t < 19.6 ? "Terminal tractor moving the tank to the yard…" :
+    t < 24.4 ? "RTG crane places the tank in the yard stack" : t < 28.4 ? "External truck at the OCR gate: ID and weight verified" :
+    t < 33 ? "RTG lowers the tank onto the truck's skeletal chassis" : t < 35 ? "Driver locks all four twistlocks, checks gauges and Hazmat placards" :
+    "Truck exits the gate onto the highway";
+
+  // fade around the loop point
+  const fade = t > 37.2 ? 1 - seg(t, 37.2, 37.9) : t < .4 ? seg(t, 0, .4) : 1;
+  $("pa-all").setAttribute("opacity", fade.toFixed(2));
+}
+
+
+  $("pa-sarLogo").setAttribute("href", document.querySelector(".logo img").src);   // the sidebar's SAR logo
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let clock = still ? 12 : 0, last = null;
+  function tick(now) {
+    if (!$("homePage").classList.contains("hidden")) {
+      if (last != null && !still) clock = (clock + Math.min(now - last, 100) / 1000) % LOOP;
+      frame(clock);
+    }
+    last = now; requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 })();
 </script>
 </body>
