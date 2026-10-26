@@ -455,6 +455,80 @@ async function deployDataset() {
   return data;
 }
 
+// ---------------------------------------------------------------- Quotation Register
+// Same columns as the Syscon "Quotation Register" report, built only from SARFD tables synced to MongoDB
+// (checked against that report: every SAR Global quotation matches field for field).
+//   tblRateRequest  H rows = one per quotation (dates, parties, ports, free days / detention rates, cargo, created by)
+//                   C rows = charge lines  -> Buy Amount = Σ charge_buyTotalAmount, Sell Amount = Σ charge_sellTotalAmount
+//                   Q rows = tank lines    -> Container Quantity = Σ qty_quantity
+//   tblJob          Job No = every job whose rateRequestNo is the quotation (comma separated)
+
+const QUOT_COMPANIES = ["SAR Global PTE Ltd"];
+const QUOT_SNAPSHOT_ID = "quotations-v1";
+const CARGO_SHORT = { HAZARDOUS: "HAZ", GENERAL: "GEN" };
+
+async function buildQuotations(db, lastSync) {
+  const rr = db.collection("tblRateRequest");
+  const match = { companyName: { $in: QUOT_COMPANIES } };
+  const [heads, money, qty] = await Promise.all([
+    rr.find({ ...match, recordType: "H" }, { projection: { _id: 0, rateRequestNo: 1, rateRequestDate: 1, validityTo: 1,
+      originFreeDays: 1, originDemurrageFreeDays: 1, originDemurrageRate: 1, destinationFreeDays: 1, destinationDemurrageFreeDays: 1,
+      destinationDemurrageRate: 1, customerName: 1, salesExecutiveName: 1, shipperName: 1, consigneeName: 1, expectedSailDate: 1,
+      plrName: 1, polName: 1, podName: 1, fpdName: 1, cargoTypeName: 1, commodity: 1, noOfPackages: 1, packageName: 1, cargoWt: 1,
+      createdByName: 1 } }).toArray(),
+    rr.aggregate([{ $match: { ...match, recordType: "C" } },
+      { $group: { _id: "$rateRequestNo", buy: { $sum: { $ifNull: ["$charge_buyTotalAmount", 0] } }, sell: { $sum: { $ifNull: ["$charge_sellTotalAmount", 0] } } } }]).toArray(),
+    rr.aggregate([{ $match: { ...match, recordType: "Q" } },
+      { $group: { _id: "$rateRequestNo", n: { $sum: { $ifNull: ["$qty_quantity", 0] } } } }]).toArray(),
+  ]);
+  const nos = heads.map((h) => h.rateRequestNo);
+  const jobs = await db.collection("tblJob").aggregate([
+    { $match: { rateRequestNo: { $in: nos }, jobNo: { $nin: [null, ""] } } },
+    { $group: { _id: "$rateRequestNo", jobs: { $addToSet: "$jobNo" } } }]).toArray();
+  const byMoney = new Map(money.map((m) => [m._id, m])), byQty = new Map(qty.map((q) => [q._id, q.n])), byJob = new Map(jobs.map((j) => [j._id, j.jobs.sort()]));
+  const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+  const num = (v) => (v == null || v === "" ? null : Number(v));
+  const round2 = (v) => Math.round(v * 100) / 100;
+  const quotes = [];
+  for (const h of heads) {
+    const date = day(h.rateRequestDate); if (!date) continue;
+    const m = byMoney.get(h.rateRequestNo) || { buy: 0, sell: 0 }, cargo = s(h.cargoTypeName);
+    quotes.push({ no: s(h.rateRequestNo), date, validity: day(h.validityTo), jobs: byJob.get(h.rateRequestNo) || [],
+      oFree: num(h.originFreeDays ?? h.originDemurrageFreeDays), oRate: num(h.originDemurrageRate),
+      dFree: num(h.destinationFreeDays ?? h.destinationDemurrageFreeDays), dRate: num(h.destinationDemurrageRate),
+      customer: unEntity(h.customerName), salesExec: unEntity(h.salesExecutiveName), shipper: unEntity(h.shipperName), consignee: unEntity(h.consigneeName),
+      sailing: day(h.expectedSailDate), plr: s(h.plrName), pol: s(h.polName), pod: s(h.podName), fpd: s(h.fpdName),
+      cargo: CARGO_SHORT[cargo.toUpperCase()] || cargo, commodity: s(h.commodity), packages: num(h.noOfPackages) || 0, packageType: s(h.packageName),
+      grossWt: num(h.cargoWt) || 0, tanks: byQty.get(h.rateRequestNo) || 0, buy: round2(m.buy), sell: round2(m.sell), profit: round2(m.sell - m.buy),
+      createdBy: s(h.createdByName) });
+  }
+  quotes.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.no.localeCompare(a.no)));
+  return { quotes, lastSync, dataTo: quotes[0]?.date || null, generatedAt: new Date().toISOString() };
+}
+
+async function quotationsDataset() {
+  if (g._sarQuot && Date.now() - g._sarQuot.at < TTL_MS) return g._sarQuot.data;
+  const data = (async () => {
+    const db = await getDb();
+    const lastOf = (table) => db.collection("sarfdSyncHistory").findOne(
+      { table, status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } }, { sort: { startedAt: -1 }, projection: { startedAt: 1 } });
+    const [rq, job] = await Promise.all([lastOf("tblRateRequest"), lastOf("tblJob")]);
+    const iso = (x) => (x?.startedAt ? new Date(x.startedAt).toISOString() : null);
+    const lastSync = iso(rq);
+    const key = createHash("sha1").update(`${QUOT_SNAPSHOT_ID}|${lastSync}|${iso(job)}`).digest("hex");
+    const cache = db.collection("dashboardCache");
+    const snap = await cache.findOne({ _id: QUOT_SNAPSHOT_ID });
+    if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
+    const payload = await buildQuotations(db, lastSync);
+    const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
+    await cache.replaceOne({ _id: QUOT_SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
+    return payload;
+  })();
+  g._sarQuot = { at: Date.now(), data };
+  data.catch(() => { g._sarQuot = undefined; });
+  return data;
+}
+
 // ---------------------------------------------------------------- Finance Recovery (AR / AP outstanding)
 // Same structure as the Syscon "Invoice Outstanding" report, built from SARFD (checked invoice by invoice:
 // invoice and adjusted amounts match for every open invoice SARFD holds):
@@ -772,6 +846,7 @@ export async function runRequest(body, user) {
   if (body.dataset === "sales") return salesDataset();
   if (body.dataset === "mr") return mrDataset();
   if (body.dataset === "deploy") return deployDataset();
+  if (body.dataset === "quotations") return quotationsDataset();
   if (body.dataset === "finance") return financeDataset();
   if (body.dataset === "financeRemarks") return financeRemarks();
   if (body.action === "saveFinanceRemark") return saveFinanceRemark(body, user);

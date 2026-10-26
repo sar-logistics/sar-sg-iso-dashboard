@@ -367,6 +367,16 @@
   /* ---------- tank inventory ---------- */
   #invPage { align-content: start; }
   .kpis.inv-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  /* Quotation register: Sr No and Quotation No stay frozen on the left */
+  .quo-table th, .quo-table td { padding: 8px 10px; }
+  .quo-table th { font-size: 10.5px; }
+  .quo-table th.txt, .quo-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
+  .quo-table td.txt { max-width: 240px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .quo-table th:first-child, .quo-table td:first-child { width: 58px; min-width: 58px; max-width: 58px; }
+  .quo-table th:nth-child(2), .quo-table td:nth-child(2) { position: sticky; left: 58px; z-index: 2; background: inherit; box-shadow: inset -1px 0 0 var(--line); }
+  .quo-table thead th:nth-child(2) { z-index: 5; background: var(--thead); }
+  .quo-table tfoot td:nth-child(2) { z-index: 4; background: var(--grand); }
+  .quo-table td.neg { color: #C24A2E; }
   .inv-table th, .inv-table td { text-align: right; padding: 8px 10px; }
   .inv-table th { font-size: 10.5px; }
   .inv-table th.txt, .inv-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
@@ -602,6 +612,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
       Finance
     </a>
+    <a href="/" data-page="quo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M13.5 11.5h-2.25a1.6 1.6 0 0 0 0 3.2h1.5a1.6 1.6 0 0 1 0 3.2H10M12 10.5v1M12 17.9v1"/></svg>
+      Quotation
+    </a>
     <a href="/" data-page="mr">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>
       M&amp;R Operations
@@ -650,6 +664,13 @@
       </div>
     </span>
     <label class="f hidden" id="rateWrap">1 USD = ₹ <input type="number" id="rate" min="1" step="0.01" style="width:96px"></label>
+  </div>
+  <div class="page-head hidden" id="quoHead">
+    <div class="ph-text"><h2>Quotation</h2><p class="sub" id="quoSub">Loading…</p></div>
+    <div class="ph-controls">
+      <label class="f">From <select id="quoFrom" aria-label="Quotations from month"></select></label>
+      <label class="f">To <select id="quoTo" aria-label="Quotations to month"></select></label>
+    </div>
   </div>
   <div class="page-head hidden" id="finHead">
     <div class="ph-text"><h2 id="finTitle">Accounts Receivable</h2><p class="sub" id="finSub">Loading…</p></div>
@@ -835,6 +856,20 @@
       </div>
     </div>
     <div class="tbl-wrap" style="max-height:680px"><table class="dep-table" id="depTable"></table></div>
+  </section>
+</main>
+
+<main id="quoPage" class="hidden">
+  <div class="alert hidden" id="quoErr" role="alert"></div>
+  <section class="card panel">
+    <div class="tools" style="justify-content:space-between">
+      <div><h2>Quotation Register</h2><p class="sub" style="margin-bottom:0" id="quoTableSub"></p></div>
+      <div class="tools" style="margin:0">
+        <input class="search" id="quoSearch" placeholder="Search quotation, job, customer, port…">
+        <button class="btn" id="quoXlsx">Export to Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap" style="max-height:680px"><table class="quo-table" id="quoTable"></table></div>
   </section>
 </main>
 
@@ -1297,7 +1332,7 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
 let currentPage = "sales";
@@ -1325,7 +1360,9 @@ function route(next) {
   $("depHead").classList.toggle("hidden", page !== "dep");
   $("depPage").classList.toggle("hidden", page !== "dep");
   $("finPage").classList.toggle("hidden", page !== "fin");
-  $("refreshBtn").classList.toggle("hidden", !["sales", "mr", "inv", "dep", "fin"].includes(page));
+  $("quoHead").classList.toggle("hidden", page !== "quo");
+  $("quoPage").classList.toggle("hidden", page !== "quo");
+  $("refreshBtn").classList.toggle("hidden", !["sales", "mr", "inv", "dep", "fin", "quo"].includes(page));
   syncTopbarH();
   if (page === "admin") loadUsers();
   if (page === "usage") loadUsage();
@@ -1333,6 +1370,7 @@ function route(next) {
   if (page === "inv") { if (mr.data) renderInv(); else loadInv(false); }
   if (page === "dep") { if (dep.data) renderDep(); else loadDep(); }
   if (page === "fin") { if (fin.data) renderFin(); else loadFin(); }
+  if (page === "quo") { if (quo.data) renderQuo(); else loadQuo(); }
   closeMenu();
 }
 // The frozen KPI row sits right under the top bar, whose height changes when its controls wrap.
@@ -1423,7 +1461,7 @@ async function loadData(withUser) {
     $("refreshBtn").disabled = false;
   }
 }
-$("refreshBtn").onclick = () => (currentPage === "mr" ? loadMr() : currentPage === "inv" ? loadInv(true) : currentPage === "dep" ? loadDep() : currentPage === "fin" ? loadFin() : loadData(false));
+$("refreshBtn").onclick = () => (currentPage === "mr" ? loadMr() : currentPage === "inv" ? loadInv(true) : currentPage === "dep" ? loadDep() : currentPage === "fin" ? loadFin() : currentPage === "quo" ? loadQuo() : loadData(false));
 
 // ============================================================ filter bar
 $("views").innerHTML = VIEWS.map(([v, l]) => `<option value="${v}">${l === "Custom Range" ? "Custom View" : `${l} View`}</option>`).join("");
@@ -2746,6 +2784,99 @@ $("bXlsx").onclick = () => {
   const rows = blRows().map((x) => ({ "HBL No": x.bl, "HBL Date": new Date(x.date + "T00:00"), Shipper: x.shipper, Consignee: x.consignee, "PLR Agent": x.plrAgent,
     POL: x.pol, POD: x.pod, "Number of Containers": x.tanks.length, "Container Nos": x.tanks.join(",") }));
   writeXlsx(`${dep.drill.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`, [["BLs", rows, [20, 12, 36, 36, 32, 16, 16, 10, 60], 1]]);
+};
+
+// ============================================================ Quotation
+// Same columns as the Syscon "Quotation Register" report. Built only from SARFD tables in MongoDB:
+// tblRateRequest (quotation header, charge lines → buy / sell, tank lines → container quantity) and tblJob (Job No).
+const quo = { data: null, from: "", to: "", months: [], q: "" };
+const QUO_COLS = [   // h = heading, g = value, k = txt | date | num | amt, sum = totalled in the Grand Total row
+  { h: "Quotation No", g: (x) => x.no, k: "txt" },
+  { h: "Quotation Date", g: (x) => x.date, k: "date" },
+  { h: "Validity Date", g: (x) => x.validity, k: "date" },
+  { h: "Job No", g: (x) => x.jobs.join(", "), k: "txt" },
+  { h: "Origin Detention Free Days", g: (x) => x.oFree, k: "num" },
+  { h: "Origin Detention Rate", g: (x) => x.oRate, k: "num" },
+  { h: "Destination Detention Free Days", g: (x) => x.dFree, k: "num" },
+  { h: "Destination Detention Rate", g: (x) => x.dRate, k: "num" },
+  { h: "Customer", g: (x) => x.customer, k: "txt" },
+  { h: "Sales Executive", g: (x) => x.salesExec, k: "txt" },
+  { h: "Shipper", g: (x) => x.shipper, k: "txt" },
+  { h: "Consignee", g: (x) => x.consignee, k: "txt" },
+  { h: "Expected Sailing Date", g: (x) => x.sailing, k: "date" },
+  { h: "PLR", g: (x) => x.plr, k: "txt" },
+  { h: "POL", g: (x) => x.pol, k: "txt" },
+  { h: "POD", g: (x) => x.pod, k: "txt" },
+  { h: "FPD", g: (x) => x.fpd, k: "txt" },
+  { h: "Cargo Type", g: (x) => x.cargo, k: "txt" },
+  { h: "Commodity", g: (x) => x.commodity, k: "txt" },
+  { h: "No Of Packages", g: (x) => x.packages, k: "num", sum: true },
+  { h: "Types Of Packages", g: (x) => x.packageType, k: "txt" },
+  { h: "Gross Weight", g: (x) => x.grossWt, k: "num", sum: true },
+  { h: "Container Quantity", g: (x) => x.tanks, k: "num", sum: true },
+  { h: "Buy Amount", g: (x) => x.buy, k: "amt", sum: true },
+  { h: "Sell Amount", g: (x) => x.sell, k: "amt", sum: true },
+  { h: "Profit", g: (x) => x.profit, k: "amt", sum: true },
+  { h: "Created By", g: (x) => x.createdBy, k: "txt" },
+];
+const quoNum = (v) => Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
+
+async function loadQuo() {
+  $("quoErr").classList.add("hidden");
+  $("refreshBtn").disabled = true;
+  if (!quo.data) $("quoSub").textContent = "Loading quotations…";
+  try {
+    quo.data = await api("/api/mongo", { dataset: "quotations" });
+    const months = quo.data.quotes.map((x) => x.date.slice(0, 7)).sort();
+    const first = months[0] || thisMonth(), last = thisMonth() > (months.at(-1) || "") ? thisMonth() : months.at(-1);
+    quo.months = monthsBetween(first, last);
+    if (!quo.from || !quo.months.includes(quo.from)) quo.from = first;
+    if (!quo.to || !quo.months.includes(quo.to)) quo.to = last;
+    const opts = (sel) => quo.months.map((m) => `<option value="${m}"${m === sel ? " selected" : ""}>${monthLabel(m)}</option>`).join("");
+    $("quoFrom").innerHTML = opts(quo.from); $("quoTo").innerHTML = opts(quo.to);
+    renderQuo();
+  } catch (e) {
+    if (e.message === "signed out" || e.message === "no access") return;
+    $("quoErr").textContent = "Could not load quotations: " + e.message; $("quoErr").classList.remove("hidden");
+  } finally { $("refreshBtn").disabled = false; }
+}
+$("quoFrom").onchange = (e) => { quo.from = e.target.value; if (quo.to < quo.from) { quo.to = quo.from; $("quoTo").value = quo.to; } renderQuo(); };
+$("quoTo").onchange = (e) => { quo.to = e.target.value; if (quo.from > quo.to) { quo.from = quo.to; $("quoFrom").value = quo.from; } renderQuo(); };
+$("quoSearch").oninput = (e) => { quo.q = e.target.value; renderQuo(); };
+
+function quoRows() {   // oldest first, like the Syscon report (Sr No 1 = earliest quotation)
+  const q = quo.q.toLowerCase();
+  const list = (quo.data?.quotes || []).filter((x) => { const m = x.date.slice(0, 7); return m >= quo.from && m <= quo.to; })
+    .filter((x) => !q || [x.no, x.jobs.join(" "), x.customer, x.shipper, x.consignee, x.plr, x.pol, x.pod, x.fpd, x.commodity, x.createdBy]
+      .some((v) => (v || "").toLowerCase().includes(q)))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.no.localeCompare(b.no)));
+  return colFilterApply("quoTable", list, [null, ...QUO_COLS.map((c) => c.g)]);   // column 0 is Sr No (no filter)
+}
+function renderQuo() {
+  if (!quo.data) return;
+  const rows = quoRows(), dash = '<span class="dash">—</span>';
+  const sync = quo.data.lastSync ? ` · last synced ${new Date(quo.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST` : "";
+  $("quoSub").textContent = `SAR Global quotations from SARFD (tblRateRequest, Job No from tblJob)${sync}`;
+  $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${monthLabel(quo.from)} – ${monthLabel(quo.to)} · amounts in USD`;
+  const cell = (c, x) => {
+    const v = c.g(x);
+    if (c.k === "txt") return `<td class="txt" title="${esc(v)}">${v ? esc(v) : dash}</td>`;
+    if (c.k === "date") return `<td>${v ? shortDate(v) : dash}</td>`;
+    if (v == null) return `<td>${dash}</td>`;
+    return `<td${c.k === "amt" && v < 0 ? ' class="neg"' : ""}>${quoNum(v)}</td>`;
+  };
+  const tot = QUO_COLS.map((c) => (c.sum ? rows.reduce((a, x) => a + (c.g(x) || 0), 0) : null));
+  $("quoTable").innerHTML = `<thead><tr><th class="txt">Sr No</th>${QUO_COLS.map((c) => `<th class="${c.k === "txt" ? "txt" : ""}">${esc(c.h)}</th>`).join("")}</tr></thead><tbody>`
+    + (rows.map((x, i) => `<tr><td>${i + 1}</td>${QUO_COLS.map((c) => cell(c, x)).join("")}</tr>`).join("")
+      || `<tr><td colspan="${QUO_COLS.length + 1}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`)
+    + `</tbody><tfoot><tr><td>Grand Total</td>${tot.map((v, i) => `<td class="${QUO_COLS[i].k === "txt" ? "txt" : ""}">${v == null ? "" : quoNum(v)}</td>`).join("")}</tr></tfoot>`;
+  colFilterHead($("quoTable"), "quoTable");
+}
+colFilterRender.quoTable = () => renderQuo();
+$("quoXlsx").onclick = () => {
+  const d = (v) => (v ? new Date(v + "T00:00") : "");
+  const rows = quoRows().map((x, i) => Object.fromEntries([["Sr No", i + 1], ...QUO_COLS.map((c) => [c.h, c.k === "date" ? d(c.g(x)) : c.g(x) ?? ""])]));
+  writeXlsx(`SAR_Quotation_Register_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Register", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
 };
 
 // ============================================================ Finance
