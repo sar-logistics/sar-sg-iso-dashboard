@@ -144,11 +144,14 @@ const keepCompany = (company, date) => SALES_COMPANIES.includes(company) || (com
 const SUNDRY = new Set(["SDI"]);
 const COUNTRY_FIX = { "SOUTH ,KOREA": "South Korea" };   // SARFD spelling slips
 const tidyCountry = (v) => { const c = s(v).replace(/\s+/g, " "); return COUNTRY_FIX[c.toUpperCase()] || c; };
+// Country → trade lane (region) from the "Tradelane Mappings" sheet, column C, loaded into tradelaneMappings by
+// sarfd_sync.py. Documents are keyed by countryKey (keep in step with country_key() in sarfd_sync.py).
+const countryKey = (v) => String(v ?? "").replace(/,/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
 const CATEGORIES = ["Lease", "Detention", "EXIM", "M&R", "Other"];
 const s = (v) => (typeof v === "string" ? v.trim() : "");
 const normCharge = (v) => s(v).toUpperCase();
 
-async function buildSales(db, mappings, lastSync) {
+async function buildSales(db, mappings, lastSync, tradelanes = []) {
   const catOf = new Map(mappings.map((m) => [normCharge(m.chargeName), CATEGORIES.includes(m.revenueCategory) ? m.revenueCategory : "Other"]));
   // Basket (Billing Details grouping) from the "Syscon Charges" sheet, loaded into chargeMappings.basket
   const basketOf = new Map(mappings.filter((m) => s(m.basket)).map((m) => [normCharge(m.chargeName), s(m.basket)]));
@@ -159,10 +162,14 @@ async function buildSales(db, mappings, lastSync) {
   ).toArray();
   // Trade lane by country: the invoice's job (tblJob.jobNo) carries origin and destination country.
   // Checked 2026-10-22: every line with a POL → POD lane has a job with both countries, and they match the BL's POL / POD countries.
+  // Trade lane = origin trade lane → destination trade lane (each country's region from the mapping sheet;
+  // a country missing from the sheet shows under its own name).
+  const regionOf = new Map(tradelanes.map((t) => [t._id, s(t.tradelane)]));
+  const region = (c) => regionOf.get(countryKey(c)) || c;
   const jobCountries = new Map();
   for (const j of await db.collection("tblJob").find({ jobNo: { $nin: [null, ""] } }, { projection: { _id: 0, jobNo: 1, originCountryName: 1, destinationCountryName: 1 } }).toArray()) {
     const o = tidyCountry(j.originCountryName), d = tidyCountry(j.destinationCountryName), k = s(j.jobNo).toUpperCase();
-    if (o && d && !jobCountries.has(k)) jobCountries.set(k, `${o} → ${d}`);
+    if (o && d && !jobCountries.has(k)) jobCountries.set(k, { country: `${o} → ${d}`, trade: `${region(o)} → ${region(d)}` });
   }
 
   const lines = [];
@@ -185,7 +192,10 @@ async function buildSales(db, mappings, lastSync) {
       shipper: s(r.shipperName),
       pol, pod,
       lane: blNo && pol && pod && !SUNDRY.has(r.voucherCode) ? `${pol} → ${pod}` : null,
-      countryLane: blNo && pol && pod && !SUNDRY.has(r.voucherCode) ? jobCountries.get(s(r.jobNo).toUpperCase()) || null : null,
+      ...(() => {   // countryLane = origin → destination country, tradeLane = their trade lanes (regions)
+        const jc = blNo && pol && pod && !SUNDRY.has(r.voucherCode) ? jobCountries.get(s(r.jobNo).toUpperCase()) : null;
+        return { countryLane: jc?.country || null, tradeLane: jc?.trade || null };
+      })(),
       blNo,
       jobNo: s(r.jobNo),
     });
@@ -197,27 +207,29 @@ async function buildSales(db, mappings, lastSync) {
 // The Atlas cluster downloads slowly (~100 KB/s), so the built dataset is kept gzipped in
 // `dashboardCache` and rebuilt only after a new tblInvoice sync or a charge-mapping change.
 const TTL_MS = 2 * 60 * 1000;
-const SNAPSHOT_ID = "sales-html-v5";
+const SNAPSHOT_ID = "sales-html-v6";
 
 async function salesDataset() {
   if (g._sarSales && Date.now() - g._sarSales.at < TTL_MS) return g._sarSales.data;
   const data = (async () => {
     const db = await getDb();
-    const [mappings, last] = await Promise.all([
+    const [mappings, last, tradelanes] = await Promise.all([
       db.collection("chargeMappings").find({}, { projection: { _id: 0, chargeName: 1, revenueCategory: 1, basket: 1 } }).toArray(),
       db.collection("sarfdSyncHistory").findOne(
         { table: "tblInvoice", status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } },
         { sort: { startedAt: -1 }, projection: { startedAt: 1 } }),
+      db.collection("tradelaneMappings").find({}, { projection: { tradelane: 1 } }).toArray(),
     ]);
     const lastSync = last?.startedAt ? new Date(last.startedAt).toISOString() : null;
     const mapKey = mappings.map((m) => `${normCharge(m.chargeName)}=${m.revenueCategory}/${m.basket || ""}`).sort().join("|");
-    const key = createHash("sha1").update(`${lastSync}|${mapKey}`).digest("hex");
+    const laneKey = tradelanes.map((t) => `${t._id}=${t.tradelane}`).sort().join("|");   // a trade-lane sheet change rebuilds the data
+    const key = createHash("sha1").update(`${lastSync}|${mapKey}|${laneKey}`).digest("hex");
 
     const cache = db.collection("dashboardCache");
     const snap = await cache.findOne({ _id: SNAPSHOT_ID });
     if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
 
-    const payload = await buildSales(db, mappings, lastSync);
+    const payload = await buildSales(db, mappings, lastSync, tradelanes);
     const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
     await cache.replaceOne({ _id: SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
     return payload;

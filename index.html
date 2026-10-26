@@ -757,7 +757,7 @@
   </div>
   <div id="generalCharts">   <!-- Agent Detail / Trade Lane Detail chart view (not shown for Billing Details) -->
   <div class="row" id="laneMixRow">
-    <section class="card panel"><div class="tools" style="justify-content:space-between;align-items:flex-start;margin-bottom:10px"><div><h2>Revenue by Trade Lane</h2><p class="sub" style="margin-bottom:0">Top 5 lanes by net revenue (origin → destination country), excludes sundry and no-BL entries</p></div><span id="toggleSlotLane"></span></div><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
+    <section class="card panel"><div class="tools" style="justify-content:space-between;align-items:flex-start;margin-bottom:10px"><div><h2>Revenue by Trade Lane</h2><p class="sub" style="margin-bottom:0">Top 5 trade lanes by net revenue (origin → destination region), excludes sundry and no-BL entries</p></div><span id="toggleSlotLane"></span></div><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
     <section class="card panel" id="mixCard"><h2>Revenue Mix</h2><p class="sub">Net revenue by charge category</p><div class="chart" style="height:280px"><canvas id="mixChart"></canvas></div><div class="legend" id="mixLegend"></div></section>
   </div>
   <section class="card panel hidden" id="portCard"><h2>Top 5 Port Pairs</h2><p class="sub" id="portSub">POL → POD by net revenue for the selected trade lane — click a bar for the invoices</p>
@@ -1281,8 +1281,9 @@ const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || 
 const VIEWS = [["monthly", "Monthly"], ["weekly", "Weekly"], ["quarterly", "Quarterly"], ["yearly", "Yearly"], ["custom", "Custom Range"]];
 // Billing Details shows these charges until the viewer changes the Charges filter.
 const NO_LANE = "No Tradelane";   // invoices without a BL / POL / POD (sub-lease, sundry …)
-// Trade lanes are origin → destination country (from the invoice's job); POL → POD stays in the invoice pop-up.
-function laneOf(l) { return l.countryLane || l.lane || null; }
+// Trade lanes are origin trade lane → destination trade lane (each country's region from the "Tradelane Mappings"
+// sheet, column C, applied to the job's origin / destination country); POL → POD stays in the invoice pop-up.
+function laneOf(l) { return l.tradeLane || l.countryLane || l.lane || null; }
 const nOtherLabel = () => (allChargesOn() ? "Total Revenue" : "Total Revenue — selected charges");
 let detailOthers = [];
 // Default month ranges (each runs to the end of the current month).
@@ -1819,7 +1820,7 @@ function renderTable() {
   detailOthers = shown.find((r) => r.others)?.others || [];
 
   $("detailTitle").textContent = `${dim} Detail`;
-  $("detailSub").textContent = `Net revenue per ${gr}${isAgent ? "" : " by origin → destination country (from the job)"}; click any number for the invoices behind it`;
+  $("detailSub").textContent = `Net revenue per ${gr}${isAgent ? "" : " by trade lane (origin → destination region of the job's countries)"}; click any number for the invoices behind it`;
   $("detailSearch").placeholder = `Search ${dim.toLowerCase()}…`;
   $("detailCount").textContent = `${filtered.length} ${dim.toLowerCase()}s`;
   const cell = (v, name, b) => `<td>${v ? `<button class="num${v < 0 ? " neg" : ""}" data-n="${esc(name ?? "")}" data-b="${b ?? ""}">${money(v)}</button>` : '<span class="dash">–</span>'}</td>`;
@@ -2143,7 +2144,7 @@ const DRILL_COLS = [(l) => l.date, (l) => l.invoiceNo, (l) => l.docType, (l) => 
 function drillRows() {
   const f = state.drill, q = state.drillQ.toLowerCase();
   const base = state.lines.filter((l) => matches(l, f) && (f.notCharges || f.allCharges || f.charge !== undefined || state.charges.has(l.charge)));
-  const searched = q ? base.filter((l) => [l.invoiceNo, l.agent, l.lane || "", l.countryLane || "", l.charge, l.blNo, l.jobNo].some((v) => v.toLowerCase().includes(q))) : base;
+  const searched = q ? base.filter((l) => [l.invoiceNo, l.agent, l.lane || "", l.tradeLane || "", l.countryLane || "", l.charge, l.blNo, l.jobNo].some((v) => v.toLowerCase().includes(q))) : base;
   return colFilterApply("mTable", searched, DRILL_COLS);
 }
 function renderDrill() {
@@ -2174,8 +2175,8 @@ document.addEventListener("keydown", (e) => {
 });
 $("mCsv").onclick = () => {
   const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
-  const head = ["Invoice Date", "Invoice No", "Type", "Agent", "Country Lane", "POL → POD", "Charge", "Category", "BL No", "Job No", "Amount USD"];
-  const body = drillRows().map((l) => [l.date, l.invoiceNo, l.docType, l.agent, l.countryLane || "", l.lane || "", l.charge, catLabel(catOf(l)), l.blNo, l.jobNo, l.amount.toFixed(2)].map(q).join(","));
+  const head = ["Invoice Date", "Invoice No", "Type", "Agent", "Trade Lane", "Country Lane", "POL → POD", "Charge", "Category", "BL No", "Job No", "Amount USD"];
+  const body = drillRows().map((l) => [l.date, l.invoiceNo, l.docType, l.agent, l.tradeLane || "", l.countryLane || "", l.lane || "", l.charge, catLabel(catOf(l)), l.blNo, l.jobNo, l.amount.toFixed(2)].map(q).join(","));
   const url = URL.createObjectURL(new Blob([[head.join(","), ...body].join("\n")], { type: "text/csv" }));
   Object.assign(document.createElement("a"), { href: url, download: state.drill.title.replace(/[^\w]+/g, "_") + ".csv" }).click();
   URL.revokeObjectURL(url);
