@@ -269,6 +269,12 @@
   .ms-list label span { flex: 1; }
   .ms-list .only { visibility: hidden; border: 0; background: none; color: var(--accent); font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0 4px; }
   .ms-list label:hover .only, .ms-list .only:focus-visible { visibility: visible; }
+  /* Charges filter grouped by basket: basket row (+/−, tick-all checkbox) with its charges indented below */
+  .ms-grp { display: flex; align-items: center; }
+  .ms-grp label { flex: 1; font-weight: 600; }
+  .ms-grp .cnt { color: var(--ink-soft); font-weight: 500; font-size: 11px; }
+  .ms-tg { width: 20px; height: 20px; flex: none; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--accent); font: inherit; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; }
+  .ms-list label.kid { padding-left: 33px; }
   #chargeBtn.on { border-color: var(--accent); background: #EFF4FF; color: var(--accent-dark); }
 
   /* ---------- drill-down modal ---------- */
@@ -300,6 +306,9 @@
     opacity: 0; transition: opacity .1s; }
   input[type=checkbox]:checked { background: var(--grad); border-color: #2C4E82; }
   input[type=checkbox]:checked::after { opacity: 1; }
+  /* partly ticked (e.g. a charge basket with some charges selected): gradient box with a white dash */
+  input[type=checkbox]:indeterminate { background: var(--grad); border-color: #2C4E82; }
+  input[type=checkbox]:indeterminate::after { opacity: 1; width: 8px; height: 0; border-width: 0 0 2px 0; transform: none; }
   input[type=checkbox]:hover { border-color: #6488D6; }
   .lane-radios { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
   .lane-radios .rb { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px;
@@ -1939,10 +1948,31 @@ function renderChargeFilter() {
   $("chargeBtn").classList.toggle("on", n !== all.length);
   if ($("chargePanel").classList.contains("hidden")) return;
   const q = $("chargeSearch").value.toLowerCase();
-  const ordered = [...all.filter((c) => state.charges.has(c)), ...all.filter((c) => !state.charges.has(c))];   // ticked first
-  $("chargeList").innerHTML = ordered.filter((c) => !q || c.toLowerCase().includes(q)).map((c) =>
-    `<label><input type="checkbox" value="${esc(c)}"${state.charges.has(c) ? " checked" : ""}><span>${esc(c)}</span><button class="only" type="button" data-only="${esc(c)}" title="Show only this charge">Only</button></label>`).join("")
-    || '<div class="foot" style="padding:8px">No matching charges</div>';
+  // Charges grouped by basket (chargeMappings.basket, from the "Syscon Charges" sheet); a search opens the matching baskets
+  const groups = chargeBaskets();
+  let html = "";
+  for (const [b, charges] of groups) {
+    const hit = !q || b.toLowerCase().includes(q) ? charges : charges.filter((c) => c.toLowerCase().includes(q));
+    if (!hit.length) continue;
+    const on = charges.filter((c) => state.charges.has(c)).length, open = !!q || chargeBasketsOpen.has(b);
+    html += `<div class="ms-grp"><button class="ms-tg" type="button" data-tg="${esc(b)}" aria-expanded="${open}" title="${open ? "Hide" : "Show"} the charges">${open ? "−" : "+"}</button>`
+      + `<label><input type="checkbox" data-basket="${esc(b)}"${on === charges.length ? " checked" : ""}${on && on < charges.length ? " data-mixed" : ""}><span>${esc(b)} <span class="cnt">${on}/${charges.length}</span></span>`
+      + `<button class="only" type="button" data-only-basket="${esc(b)}" title="Show only this basket">Only</button></label></div>`;
+    if (open) html += hit.map((c) => `<label class="kid"><input type="checkbox" value="${esc(c)}"${state.charges.has(c) ? " checked" : ""}><span>${esc(c)}</span><button class="only" type="button" data-only="${esc(c)}" title="Show only this charge">Only</button></label>`).join("");
+  }
+  $("chargeList").innerHTML = html || '<div class="foot" style="padding:8px">No matching charges</div>';
+  for (const i of $("chargeList").querySelectorAll("input[data-mixed]")) i.indeterminate = true;   // some charges of the basket ticked
+}
+const chargeBasketsOpen = new Set();
+/** [[basket, [charges…]], …] in basket order (1., 2., …), "(Not mapped)" last; charges A–Z. */
+function chargeBaskets() {
+  const m = new Map();
+  for (const c of allCharges()) {
+    const b = state.lines.find((l) => l.charge === c)?.basket || "(Not mapped)";
+    if (!m.has(b)) m.set(b, []); m.get(b).push(c);
+  }
+  const ord = (x) => (/^\d+/.test(x) ? +x.match(/^\d+/)[0] : 99);
+  return [...m].sort(([a], [b]) => ord(a) - ord(b) || a.localeCompare(b));
 }
 $("chargeBtn").onclick = (e) => {
   e.stopPropagation();
@@ -1954,11 +1984,20 @@ $("chargePanel").onclick = (e) => {
   e.stopPropagation();
   const only = e.target.closest("button[data-only]");
   if (only) { e.preventDefault(); state.charges = new Set([only.dataset.only]); render(); renderChargeFilter(); return; }
+  const onlyB = e.target.closest("button[data-only-basket]");
+  if (onlyB) { e.preventDefault(); state.charges = new Set(chargeBaskets().find(([b]) => b === onlyB.dataset.onlyBasket)?.[1] || []); render(); renderChargeFilter(); return; }
+  const tg = e.target.closest("button[data-tg]");
+  if (tg) { const b = tg.dataset.tg; chargeBasketsOpen.has(b) ? chargeBasketsOpen.delete(b) : chargeBasketsOpen.add(b); renderChargeFilter(); return; }
   const act = e.target.closest("button[data-ms]")?.dataset.ms; if (!act) return;
   state.charges = new Set(act === "all" ? allCharges() : act === "default" ? DEFAULT_CHARGES : []);
   render(); renderChargeFilter();
 };
 $("chargeList").onchange = (e) => {
+  const bk = e.target.dataset.basket;
+  if (bk !== undefined) {   // basket checkbox ticks / unticks all its charges
+    for (const c of chargeBaskets().find(([b]) => b === bk)?.[1] || []) e.target.checked ? state.charges.add(c) : state.charges.delete(c);
+    render(); renderChargeFilter(); return;
+  }
   const c = e.target.value; if (!c) return;
   e.target.checked ? state.charges.add(c) : state.charges.delete(c);
   render(); renderChargeFilter();   // whole page follows the Charges filter
