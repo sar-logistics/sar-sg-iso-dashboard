@@ -136,6 +136,9 @@ async function aggregate(collection, pipeline = []) {
 //   - invoices carrying a deletedNo are kept: they are still posted in the ledger and in the report
 const SALES_VOUCHERS = { PSI: "Invoice", SLI: "Invoice", SDI: "Invoice", MRI: "Invoice", CN: "Credit Note" };
 const SALES_COMPANIES = ["SAR Global PTE Ltd"];
+// Credit notes against invoices dated before 2026 are left out (e.g. the Principle Credit Notes entered in Oct-26,
+// dated Jan-26, that credit DEM-IMP invoices of Apr–Sep 2025): the Performance report only covers 2026 billing.
+const CN_PARENT_FROM = new Date("2026-01-01T00:00:00Z");
 // SAR Global was SAR LOGISOLUTIONS PTE. LTD. until the rename in Feb 2026; its January 2026 invoices and BLs
 // are shown too, so Jan-26 has figures. Earlier months of the old company stay out.
 const OLD_COMPANY = "SAR LOGISOLUTIONS PTE. LTD.";
@@ -158,7 +161,7 @@ async function buildSales(db, mappings, lastSync, tradelanes = []) {
   const rows = await db.collection("tblInvoice").find(
     { recordType: "C", voucherCode: { $in: Object.keys(SALES_VOUCHERS) }, companyName: { $in: [...SALES_COMPANIES, OLD_COMPANY] }, invoiceNo: { $not: /^PRO/i } },
     { projection: { _id: 0, companyName: 1, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, lineNo: 1, chargeName: 1,
-        chargeTotalAmountHc: 1, billingPartyName: 1, shipperName: 1, polName: 1, podName: 1, blNo: 1, jobNo: 1 } },
+        chargeTotalAmountHc: 1, billingPartyName: 1, shipperName: 1, polName: 1, podName: 1, blNo: 1, jobNo: 1, parentInvoiceDate: 1 } },
   ).toArray();
   // Trade lane by country: the invoice's job (tblJob.jobNo) carries origin and destination country.
   // Checked 2026-10-22: every line with a POL → POD lane has a job with both countries, and they match the BL's POL / POD countries.
@@ -176,6 +179,7 @@ async function buildSales(db, mappings, lastSync, tradelanes = []) {
   for (const r of rows) {
     if (!r.invoiceDate || !keepCompany(r.companyName, new Date(r.invoiceDate).toISOString())) continue;
     const docType = SALES_VOUCHERS[r.voucherCode];
+    if (docType === "Credit Note" && r.parentInvoiceDate && new Date(r.parentInvoiceDate) < CN_PARENT_FROM) continue;   // credits a pre-2026 invoice
     const pol = s(r.polName), pod = s(r.podName), blNo = s(r.blNo);
     const charge = normCharge(r.chargeName) || "(NO CHARGE NAME)";
     lines.push({
@@ -207,7 +211,7 @@ async function buildSales(db, mappings, lastSync, tradelanes = []) {
 // The Atlas cluster downloads slowly (~100 KB/s), so the built dataset is kept gzipped in
 // `dashboardCache` and rebuilt only after a new tblInvoice sync or a charge-mapping change.
 const TTL_MS = 2 * 60 * 1000;
-const SNAPSHOT_ID = "sales-html-v6";
+const SNAPSHOT_ID = "sales-html-v7";
 
 async function salesDataset() {
   if (g._sarSales && Date.now() - g._sarSales.at < TTL_MS) return g._sarSales.data;

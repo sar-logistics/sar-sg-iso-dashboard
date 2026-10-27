@@ -1824,7 +1824,7 @@ function render() {
     renderTable();
   }
 
-  $("footnote").textContent = "Source: SARFD tblInvoice — SAR Global PTE Ltd (and the old SAR LOGISOLUTIONS PTE. LTD. for Jan-26) sales, sub-lease, sundry and M&R invoices, credit notes subtracted (debit notes and proformas excluded). All charges are included. Amounts in USD"
+  $("footnote").textContent = "Source: SARFD tblInvoice — SAR Global PTE Ltd (and the old SAR LOGISOLUTIONS PTE. LTD. for Jan-26) sales, sub-lease, sundry and M&R invoices, credit notes subtracted, except credit notes against invoices dated before 2026 (debit notes and proformas excluded). All charges are included. Amounts in USD"
     + (state.currency === "INR" ? `, shown in INR at ₹${state.rate}/USD` : "") + "."
     + (state.lastSync ? ` Last invoice sync ${new Date(state.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.` : "");
 }
