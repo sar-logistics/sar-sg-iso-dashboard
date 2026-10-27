@@ -3048,6 +3048,9 @@ const QUO_COLS = [   // h = heading, g = value, k = txt | date | num | amt, sum 
   { h: "Types Of Packages", g: (x) => x.packageType, k: "txt" },
   { h: "Gross Weight", g: (x) => x.grossWt, k: "num", sum: true },
   { h: "Container Quantity", g: (x) => x.tanks, k: "num", sum: true },
+  { h: "Container Size", g: (x) => x.tankSize, k: "txt" },     // tblRateRequest tank lines (qty_sizeName, qty_typeName, qty_tankTypeName)
+  { h: "Container Type", g: (x) => x.tankKind, k: "txt" },
+  { h: "Tank Type", g: (x) => x.tankType, k: "txt" },
   { h: "Buy Amount", g: (x) => x.buy, k: "amt", sum: true },
   { h: "Sell Amount", g: (x) => x.sell, k: "amt", sum: true },
   { h: "Profit", g: (x) => x.profit, k: "amt", sum: true },
@@ -3189,12 +3192,12 @@ $("quoOverlay").onclick = (e) => { if (e.target === $("quoOverlay")) closeQuotes
 $("qXlsx").onclick = () => {
   const d = (v) => (v ? new Date(v + "T00:00") : "");
   const rows = quotesRows().map((x, i) => Object.fromEntries([["Sr No", i + 1], ...QUO_COLS.map((c) => [c.h, c.k === "date" ? d(c.g(x)) : c.g(x) ?? ""])]));
-  writeXlsx(`${quo.drill.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`, [["Quotations", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
+  writeXlsx(`${quo.drill.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`, [["Quotations", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 8, 12, 9, 11, 11, 11, 18], 2]]);
 };
 $("quoXlsx").onclick = () => {
   const d = (v) => (v ? new Date(v + "T00:00") : "");
   const rows = quoRows().map((x, i) => Object.fromEntries([["Sr No", i + 1], ...QUO_COLS.map((c) => [c.h, c.k === "date" ? d(c.g(x)) : c.g(x) ?? ""])]));
-  writeXlsx(`SAR_Quotation_Details_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Details", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
+  writeXlsx(`SAR_Quotation_Details_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Details", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 8, 12, 9, 11, 11, 11, 18], 2]]);
 };
 
 // ============================================================ Finance

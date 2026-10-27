@@ -491,7 +491,7 @@ async function deployDataset() {
 //   tblJob          Job No = every job whose rateRequestNo is the quotation (comma separated)
 
 const QUOT_COMPANIES = ["SAR Global PTE Ltd"];   // plus the old company's quotations in OLD_COMPANY_MONTHS (Jan-26), as in Sales / Tank Deployment
-const QUOT_SNAPSHOT_ID = "quotations-v2";
+const QUOT_SNAPSHOT_ID = "quotations-v3";
 const CARGO_SHORT = { HAZARDOUS: "HAZ", GENERAL: "GEN" };
 
 async function buildQuotations(db, lastSync) {
@@ -506,28 +506,31 @@ async function buildQuotations(db, lastSync) {
     rr.aggregate([{ $match: { ...match, recordType: "C" } },
       { $group: { _id: "$rateRequestNo", buy: { $sum: { $ifNull: ["$charge_buyTotalAmount", 0] } }, sell: { $sum: { $ifNull: ["$charge_sellTotalAmount", 0] } } } }]).toArray(),
     rr.aggregate([{ $match: { ...match, recordType: "Q" } },
-      { $group: { _id: "$rateRequestNo", n: { $sum: { $ifNull: ["$qty_quantity", 0] } } } }]).toArray(),
+      { $group: { _id: "$rateRequestNo", n: { $sum: { $ifNull: ["$qty_quantity", 0] } },
+        sizes: { $addToSet: "$qty_sizeName" }, types: { $addToSet: "$qty_typeName" }, tankTypes: { $addToSet: "$qty_tankTypeName" } } }]).toArray(),
   ]);
   const nos = heads.map((h) => h.rateRequestNo);
   const jobs = await db.collection("tblJob").aggregate([
     { $match: { rateRequestNo: { $in: nos }, jobNo: { $nin: [null, ""] } } },
     { $group: { _id: "$rateRequestNo", jobs: { $addToSet: "$jobNo" } } }]).toArray();
-  const byMoney = new Map(money.map((m) => [m._id, m])), byQty = new Map(qty.map((q) => [q._id, q.n])), byJob = new Map(jobs.map((j) => [j._id, j.jobs.sort()]));
+  const byMoney = new Map(money.map((m) => [m._id, m])), byQty = new Map(qty.map((q) => [q._id, q])), byJob = new Map(jobs.map((j) => [j._id, j.jobs.sort()]));
   const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
   const num = (v) => (v == null || v === "" ? null : Number(v));
   const round2 = (v) => Math.round(v * 100) / 100;
+  const list = (vs) => [...new Set((vs || []).map(s).filter(Boolean))].sort().join(", ");   // container line values, e.g. "20, 40"
   const quotes = [];
   for (const h of heads) {
     const date = day(h.rateRequestDate); if (!date) continue;
     if (h.companyName === OLD_COMPANY && !OLD_COMPANY_MONTHS.includes(date.slice(0, 7))) continue;
-    const m = byMoney.get(h.rateRequestNo) || { buy: 0, sell: 0 }, cargo = s(h.cargoTypeName);
+    const m = byMoney.get(h.rateRequestNo) || { buy: 0, sell: 0 }, q = byQty.get(h.rateRequestNo) || {}, cargo = s(h.cargoTypeName);
     quotes.push({ no: s(h.rateRequestNo), date, validity: day(h.validityTo), jobs: byJob.get(h.rateRequestNo) || [],
       oFree: num(h.originFreeDays ?? h.originDemurrageFreeDays), oRate: num(h.originDemurrageRate),
       dFree: num(h.destinationFreeDays ?? h.destinationDemurrageFreeDays), dRate: num(h.destinationDemurrageRate),
       customer: unEntity(h.customerName), salesExec: unEntity(h.salesExecutiveName), shipper: unEntity(h.shipperName), consignee: unEntity(h.consigneeName),
       sailing: day(h.expectedSailDate), plr: s(h.plrName), pol: s(h.polName), pod: s(h.podName), fpd: s(h.fpdName),
       cargo: CARGO_SHORT[cargo.toUpperCase()] || cargo, commodity: s(h.commodity), packages: num(h.noOfPackages) || 0, packageType: s(h.packageName),
-      grossWt: num(h.cargoWt) || 0, tanks: byQty.get(h.rateRequestNo) || 0, buy: round2(m.buy), sell: round2(m.sell), profit: round2(m.sell - m.buy),
+      grossWt: num(h.cargoWt) || 0, tanks: q.n || 0,
+      tankSize: list(q.sizes), tankKind: list(q.types), tankType: list(q.tankTypes), buy: round2(m.buy), sell: round2(m.sell), profit: round2(m.sell - m.buy),
       createdBy: s(h.createdByName) });
   }
   quotes.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.no.localeCompare(a.no)));
