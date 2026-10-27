@@ -373,6 +373,11 @@
   .quo-sum thead th:first-child { position: sticky; left: 0; z-index: 3; }
   .quo-sum th.gt, .quo-sum td.gt { background: var(--grand); font-weight: 700; }
   .quo-sum tbody tr:hover td { background: #EFF4FF; }
+  .quo-sum td:first-child { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quo-sum tr.sub td:first-child { padding-left: 38px; font-weight: 500; color: var(--ink-soft); }
+  .quo-sum tr.sub td { font-size: 12px; }
+  .quo-sum tr.gt0 td { border-top: 2px solid var(--line); }
+  .quo-sum tr.gt0 td, .quo-sum tr.gt1 td { background: var(--grand); font-weight: 700; }
   .inv-table th, .inv-table td { text-align: right; padding: 8px 10px; }
   .inv-table th { font-size: 10.5px; }
   .inv-table th.txt, .inv-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
@@ -1073,7 +1078,11 @@
     <div class="tools" style="justify-content:space-between">
       <div><h2>Quotation Details</h2><p class="sub" style="margin-bottom:0" id="quoTableSub"></p></div>
       <div class="tools" style="margin:0">
-        <input class="search" id="quoSearch" placeholder="Search quotation, job, customer, port…">
+        <div class="seg" id="quoBy" role="group" aria-label="Group by">
+          <button data-by="shipper">By Shipper</button>
+          <button data-by="customer">By Customer</button>
+        </div>
+        <button class="btn" id="quoToggleAll">Expand all</button>
         <button class="btn" id="quoXlsx">Export to Excel</button>
       </div>
     </div>
@@ -3010,7 +3019,7 @@ $("bXlsx").onclick = () => {
 // ============================================================ Quotation
 // Same columns as the Syscon "Quotation Register" report. Built only from SARFD tables in MongoDB:
 // tblRateRequest (quotation header, charge lines → buy / sell, tank lines → container quantity) and tblJob (Job No).
-const quo = { data: null, from: "", to: "", months: [], q: "", drill: null, drillQ: "" };
+const quo = { data: null, from: "", to: "", months: [], drill: null, drillQ: "", by: "shipper", open: new Set() };   // by = Quotation Details rows: shipper | customer
 // Follow-up list: valid until this month (validity date in the current month) and no Job No yet
 const quoFollowUp = (x) => !x.jobs.length && (x.validity || "").slice(0, 7) === thisMonth();
 const QUO_COLS = [   // h = heading, g = value, k = txt | date | num | amt, sum = totalled in the Grand Total row
@@ -3066,13 +3075,9 @@ async function loadQuo() {
 }
 $("quoFrom").onchange = (e) => { quo.from = e.target.value; if (quo.to < quo.from) { quo.to = quo.from; $("quoTo").value = quo.to; } renderQuo(); };
 $("quoTo").onchange = (e) => { quo.to = e.target.value; if (quo.from > quo.to) { quo.from = quo.to; $("quoFrom").value = quo.from; } renderQuo(); };
-$("quoSearch").oninput = (e) => { quo.q = e.target.value; renderQuo(); };
 
-function quoRows() {   // months in the range + search; oldest first, like the Syscon report (Sr No 1 = earliest quotation)
-  const q = quo.q.toLowerCase();
+function quoRows() {   // months in the range; oldest first, like the Syscon report (Sr No 1 = earliest quotation)
   const list = (quo.data?.quotes || []).filter((x) => { const m = x.date.slice(0, 7); return m >= quo.from && m <= quo.to; })
-    .filter((x) => !q || [x.no, x.jobs.join(" "), x.customer, x.shipper, x.consignee, x.plr, x.pol, x.pod, x.fpd, x.commodity, x.createdBy]
-      .some((v) => (v || "").toLowerCase().includes(q)))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.no.localeCompare(b.no)));
   return list;
 }
@@ -3081,7 +3086,7 @@ function renderQuo() {
   if (!quo.data) return;
   const rows = quoRows(), base = rows, dash = '<span class="dash">—</span>';
   $("quoSub").textContent = "";   // no subtitle under "Quotation" (only "Loading…" while the data loads)
-  // KPIs follow the register (months, search). Converted = the quotation has a Job No in tblJob.
+  // KPIs follow the From / To months. Converted = the quotation has a Job No in tblJob.
   const conv = base.filter((x) => x.jobs.length).length, pct = base.length ? (100 * conv / base.length).toFixed(1) : "0.0";
   const follow = base.filter(quoFollowUp).length;
   // each card opens a pop-up table of its quotations
@@ -3091,24 +3096,49 @@ function renderQuo() {
       <div class="note">${pct}% converted · ${n0(base.length - conv)} not converted</div></button>
     <button class="kpi" data-k="follow" style="border-top-color:#D98E04" title="Show the follow-up list"><div class="lbl">Expiring This Month · No Job</div><div class="val">${n0(follow)}</div>
       <div class="note muted">Valid until ${monthLabel(thisMonth())}, not converted yet</div></button>`;
-  $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${quoRangeLabel()} · by quotation month — click a number for the quotations`;
-  // months across the top (then Grand Total); rows = number of quotations, converted (Job No not blank), % converted
-  const months = monthsBetween(quo.from, quo.to).map((m) => ({ m, n: 0, conv: 0 }));
-  const byM = new Map(months.map((r) => [r.m, r]));
-  for (const x of rows) { const r = byM.get(x.date.slice(0, 7)); if (r) { r.n++; if (x.jobs.length) r.conv++; } }
-  const cols = [...months, { m: "", n: rows.length, conv }];
-  const num = (v, m, k) => (v ? `<button class="num" data-m="${m}" data-k="${k}">${n0(v)}</button>` : dash);
-  const gt = (r) => (r.m ? "" : ' class="gt"');
-  $("quoTable").innerHTML = `<thead><tr><th>Month</th>${months.map((r) => `<th>${monthLabel(r.m)}</th>`).join("")}<th class="gt">Grand Total</th></tr></thead><tbody>`
-    + `<tr><td>Number of Quotations</td>${cols.map((r) => `<td${gt(r)}>${num(r.n, r.m, "all")}</td>`).join("")}</tr>`
-    + `<tr><td>Converted Quotations</td>${cols.map((r) => `<td${gt(r)}>${num(r.conv, r.m, "conv")}</td>`).join("")}</tr>`
-    + `<tr><td>% Converted</td>${cols.map((r) => `<td${gt(r)}>${r.n ? (100 * r.conv / r.n).toFixed(1) + "%" : dash}</td>`).join("")}</tr></tbody>`;
+  $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${quoRangeLabel()} · by quotation month — click + for converted, a number for the quotations`;
+  // months across the top (then Grand Total). One row per shipper / customer (most quotations first) with its number of
+  // quotations; +/− shows its Converted (Job No not blank) and % Converted rows. Grand Total rows at the bottom.
+  for (const b of $("quoBy").children) b.setAttribute("aria-pressed", b.dataset.by === quo.by);
+  const ms = monthsBetween(quo.from, quo.to), blank = quo.by === "shipper" ? "(No shipper)" : "(No customer)";
+  const tally = () => ({ n: Object.fromEntries(ms.map((m) => [m, 0])), conv: Object.fromEntries(ms.map((m) => [m, 0])), tn: 0, tc: 0 });
+  const add = (t, x) => { const m = x.date.slice(0, 7); if (!(m in t.n)) return; t.n[m]++; t.tn++; if (x.jobs.length) { t.conv[m]++; t.tc++; } };
+  const parties = new Map(), total = tally();
+  for (const x of rows) { const p = quoParty(x) || blank; if (!parties.has(p)) parties.set(p, tally()); add(parties.get(p), x); add(total, x); }
+  const list = [...parties].sort((a, b) => b[1].tn - a[1].tn || a[0].localeCompare(b[0]));
+  const num = (v, p, m, k) => (v ? `<button class="num" data-p="${esc(p)}" data-m="${m}" data-k="${k}">${n0(v)}</button>` : dash);
+  const pctOf = (n, c) => (n ? (100 * c / n).toFixed(1) + "%" : dash);
+  // p = party name ("" = everyone); three rows: quotations, converted, % converted
+  const cellsN = (t, p) => ms.map((m) => `<td>${num(t.n[m], p, m, "all")}</td>`).join("") + `<td class="gt">${num(t.tn, p, "", "all")}</td>`;
+  const cellsC = (t, p) => ms.map((m) => `<td>${num(t.conv[m], p, m, "conv")}</td>`).join("") + `<td class="gt">${num(t.tc, p, "", "conv")}</td>`;
+  const cellsP = (t) => ms.map((m) => `<td>${pctOf(t.n[m], t.conv[m])}</td>`).join("") + `<td class="gt">${pctOf(t.tn, t.tc)}</td>`;
+  let body = "";
+  for (const [p, t] of list) {
+    const open = quo.open.has(p);
+    body += `<tr><td title="${esc(p)}"><button class="tg" data-tg="${esc(p)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(p)}</td>${cellsN(t, p)}</tr>`;
+    if (open) body += `<tr class="sub"><td>Converted Quotations</td>${cellsC(t, p)}</tr><tr class="sub"><td>% Converted</td>${cellsP(t)}</tr>`;
+  }
+  $("quoTable").innerHTML = `<thead><tr><th>${quo.by === "shipper" ? "Shipper" : "Customer"}</th>${ms.map((m) => `<th>${monthLabel(m)}</th>`).join("")}<th class="gt">Grand Total</th></tr></thead><tbody>`
+    + (body || `<tr><td colspan="${ms.length + 2}" style="text-align:center;padding:30px;color:#94a3b8">No matching quotations</td></tr>`)
+    + `<tr class="gt0"><td>Number of Quotations</td>${cellsN(total, "")}</tr><tr class="gt1"><td>Converted Quotations</td>${cellsC(total, "")}</tr><tr class="gt1"><td>% Converted</td>${cellsP(total)}</tr></tbody>`;
+  $("quoToggleAll").textContent = list.length && list.every(([p]) => quo.open.has(p)) ? "Collapse all" : "Expand all";
 }
+const quoParty = (x) => (quo.by === "shipper" ? x.shipper : x.customer) || "";
 $("quoTable").onclick = (e) => {
+  const tg = e.target.closest("button.tg[data-tg]");
+  if (tg) { const p = tg.dataset.tg; quo.open.has(p) ? quo.open.delete(p) : quo.open.add(p); return renderQuo(); }
   const b = e.target.closest("button.num[data-k]"); if (!b) return;
-  const m = b.dataset.m, when = m ? monthLabel(m) : quoRangeLabel(), inM = (x) => !m || x.date.slice(0, 7) === m;
-  if (b.dataset.k === "all") openQuotes(`Quotations › ${when}`, inM);
-  else openQuotes(`Converted Quotations › ${when}`, (x) => inM(x) && x.jobs.length > 0);
+  const m = b.dataset.m, p = b.dataset.p, blank = quo.by === "shipper" ? "(No shipper)" : "(No customer)";
+  const inP = (x) => !p || (quoParty(x) || blank) === p, inM = (x) => !m || x.date.slice(0, 7) === m;
+  const when = (p ? `${p} › ` : "") + (m ? monthLabel(m) : quoRangeLabel());
+  if (b.dataset.k === "all") openQuotes(`Quotations › ${when}`, (x) => inP(x) && inM(x));
+  else openQuotes(`Converted Quotations › ${when}`, (x) => inP(x) && inM(x) && x.jobs.length > 0);
+};
+$("quoBy").onclick = (e) => { const b = e.target.closest("button[data-by]"); if (b && b.dataset.by !== quo.by) { quo.by = b.dataset.by; quo.open.clear(); renderQuo(); } };
+$("quoToggleAll").onclick = () => {
+  const ps = [...new Set(quoRows().map((x) => quoParty(x) || (quo.by === "shipper" ? "(No shipper)" : "(No customer)")))];
+  if (ps.every((p) => quo.open.has(p))) quo.open.clear(); else ps.forEach((p) => quo.open.add(p));
+  renderQuo();
 };
 $("quoKpis").onclick = (e) => {
   const k = e.target.closest(".kpi[data-k]")?.dataset.k; if (!k) return;
