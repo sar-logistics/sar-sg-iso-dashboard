@@ -367,7 +367,7 @@
   /* ---------- tank inventory ---------- */
   #invPage { align-content: start; }
   .kpis.inv-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  /* Quotation Register summary: months across, one row per measure */
+  /* Quotation Details summary: months across, one row per measure */
   .quo-sum th:not(:first-child), .quo-sum td:not(:first-child) { text-align: right; }
   .quo-sum td:first-child { min-width: 190px; font-weight: 600; position: sticky; left: 0; z-index: 1; background: var(--card); }
   .quo-sum thead th:first-child { position: sticky; left: 0; z-index: 3; }
@@ -1071,7 +1071,7 @@
   <div class="kpis quo-kpis" id="quoKpis"></div>
   <section class="card panel">
     <div class="tools" style="justify-content:space-between">
-      <div><h2>Quotation Register</h2><p class="sub" style="margin-bottom:0" id="quoTableSub"></p></div>
+      <div><h2>Quotation Details</h2><p class="sub" style="margin-bottom:0" id="quoTableSub"></p></div>
       <div class="tools" style="margin:0">
         <input class="search" id="quoSearch" placeholder="Search quotation, job, customer, port…">
         <button class="btn" id="quoXlsx">Export to Excel</button>
@@ -3154,7 +3154,7 @@ $("qXlsx").onclick = () => {
 $("quoXlsx").onclick = () => {
   const d = (v) => (v ? new Date(v + "T00:00") : "");
   const rows = quoRows().map((x, i) => Object.fromEntries([["Sr No", i + 1], ...QUO_COLS.map((c) => [c.h, c.k === "date" ? d(c.g(x)) : c.g(x) ?? ""])]));
-  writeXlsx(`SAR_Quotation_Register_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Register", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
+  writeXlsx(`SAR_Quotation_Details_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Details", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
 };
 
 // ============================================================ Finance
