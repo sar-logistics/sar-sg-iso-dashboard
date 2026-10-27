@@ -125,7 +125,7 @@
   .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: none; }
 
   /* ---------- login (same as the reference dashboard) ---------- */
-  #login { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 16px;
+  #login { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 22px; padding: max(16px, 7vh) 16px 16px;
            background: linear-gradient(160deg, var(--navy-900), #0A1826 70%); }
   .login-card { max-width: 380px; width: 100%; padding: 40px 44px; background: #fff; border-radius: 20px; text-align: center; box-shadow: 0 24px 60px rgb(0 0 0 / .3);
                 animation: cardRise .45s ease both; }
@@ -585,18 +585,11 @@
     .f select { min-width: 0; }
   }
 
-  .side .logo { cursor: pointer; }   /* the logo opens Home */
-  /* ---- Home page: ISO tank port animation (all ids / classes prefixed pa-) ---- */
-  /* full screen: fills the whole area beside the menu; on this page the top bar floats, see-through, over the sky */
-  main#homePage { max-width: none; padding: 0; display: block; }
-  .content.on-home .topbar { position: absolute; left: 0; right: 0; top: 0; background: transparent; border-color: transparent; box-shadow: none; backdrop-filter: none; }
-  .content.on-home { position: relative; }
-  #homePage .pa-full { position: relative; height: 100vh; min-height: 320px; overflow: hidden;
-                       background: linear-gradient(#C9DAF3, #E8F0FB 55%, #F4F8FE); }
-  #homePage .pa-title { position: absolute; top: 5%; left: 0; right: 0; z-index: 1; margin: 0; padding: 0 16px; text-align: center;
-                        font-size: clamp(20px, 2.6vw, 34px); font-weight: 700; color: var(--navy, #1E3A5F); }
-  #homePage .pa-stage { position: absolute; inset: 0; }
-  #homePage .pa-stage svg { display: block; width: 100%; height: 100%; }
+  /* ---- Login page background: ISO tank port animation (all ids / classes prefixed pa-); the sign-in card sits on the sky ---- */
+  #login .pa-full { position: absolute; inset: 0; z-index: 0; overflow: hidden; background: linear-gradient(#C9DAF3, #E8F0FB 55%, #F4F8FE); }
+  #login .pa-stage { position: absolute; inset: 0; }
+  #login .pa-stage svg { display: block; width: 100%; height: 100%; }
+  #login .login-card { position: relative; z-index: 1; }
   .pa-spin { transform-box: fill-box; transform-origin: center; animation: paSpin .5s linear infinite paused; }
   .pa-moving .pa-spin { animation-play-state: running; }
   .pa-reverse .pa-spin { animation-direction: reverse; }
@@ -614,7 +607,7 @@
   .pa-lamp { animation: paBlink 1s steps(2) infinite; }
   @keyframes paBlink { 50% { opacity: .15; } }
   .pa-badge text { font-family: "Plus Jakarta Sans", sans-serif; font-size: 12px; font-weight: 700; fill: #fff; }
-  @media (prefers-reduced-motion: reduce) { #homePage * { animation: none !important; } }
+  @media (prefers-reduced-motion: reduce) { #login .pa-full * { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -755,21 +748,7 @@
 </div>
 
 <section id="login" class="hidden">
-  <div class="login-card">
-    <img class="login-logo" src="data:image/png;base64,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" alt="SAR — Connecting Continents">
-    <div class="login-badge"><span class="status-dot"></span>Live Dashboard</div>
-    <h2>SAR ISO Tank SG Dashboard</h2>
-    <p>Sign in with your SAR Google Workspace account to access the SAR ISO Tank SG Dashboard.</p>
-    <div id="gsiButton"></div>
-    <div id="loginError" role="alert"></div>
-    <div class="login-divider">Restricted Access</div>
-    <div class="login-footer">Access is restricted to authorised SAR team members.<br>Contact <b>Admin</b> to request access.</div>
-  </div>
-</section>
-
-<main id="homePage" class="hidden">
-  <section class="pa-full">
-    <h2 class="pa-title">Welcome to SAR ISO Tank Dashboard</h2>
+  <div class="pa-full" aria-hidden="true">
     <div class="pa-stage">
       <svg id="pa-scene" viewBox="0 -230 1400 560" preserveAspectRatio="xMidYMax meet" role="img" aria-label="ISO tank discharge: ship berths, STS crane lifts the tank to a terminal chassis, RTG crane stacks it, external truck is loaded after the OCR gate and leaves">
         <defs>
@@ -953,8 +932,18 @@
         </g>
       </svg>
     </div>
-  </section>
-</main>
+  </div>
+  <div class="login-card">
+    <img class="login-logo" src="data:image/png;base64,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" alt="SAR — Connecting Continents">
+    <div class="login-badge"><span class="status-dot"></span>Live Dashboard</div>
+    <h2>SAR ISO Tank SG Dashboard</h2>
+    <p>Sign in with your SAR Google Workspace account to access the SAR ISO Tank SG Dashboard.</p>
+    <div id="gsiButton"></div>
+    <div id="loginError" role="alert"></div>
+    <div class="login-divider">Restricted Access</div>
+    <div class="login-footer">Access is restricted to authorised SAR team members.<br>Contact <b>Admin</b> to request access.</div>
+  </div>
+</section>
 
 <main id="app" class="hidden">
   <div class="alert hidden" id="dataError" role="alert"></div>
@@ -1535,7 +1524,7 @@ function tokenValid(t) {
 function getToken() { return idToken && tokenValid(idToken) ? idToken : null; }
 
 function showLogin(message) {
-  currentPage = "home";
+  currentPage = "sales";
   state.currency = "USD";
   idToken = null;
   for (const id of ["app", "side", "topbar", "backdrop"]) $(id).classList.add("hidden");
@@ -1570,15 +1559,15 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { home: "Welcome", sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
-let currentPage = "home";   // after sign-in the port animation shows first (no menu item; a report opens from the menu)
+let currentPage = "sales";   // after sign-in Performance (Billing Details) opens first
 function route(next) {
   if (next) currentPage = next;
   if (location.hash || location.pathname !== "/" || location.search) history.replaceState(null, "", "/");
-  let page = PAGES[currentPage] ? currentPage : "home";
-  if ((page === "admin" || page === "usage") && !isAdmin()) page = "home";
+  let page = PAGES[currentPage] ? currentPage : "sales";
+  if ((page === "admin" || page === "usage") && !isAdmin()) page = "sales";
   for (const a of document.querySelectorAll(".side nav a:not(.sub)")) {
     if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -1588,8 +1577,6 @@ function route(next) {
   $("filters").classList.toggle("hidden", page !== "sales" || !state.detail);
   document.title = `${PAGES[page]} · SAR ISO Tank SG`;
   $("app").classList.toggle("hidden", page !== "sales");
-  $("homePage").classList.toggle("hidden", page !== "home");
-  $("topbar").parentElement.classList.toggle("on-home", page === "home");   // top bar floats over the animation
   $("adminPage").classList.toggle("hidden", page !== "admin");
   $("usagePage").classList.toggle("hidden", page !== "usage");
   $("mrPage").classList.toggle("hidden", page !== "mr");
@@ -1623,7 +1610,6 @@ $("sideNav").addEventListener("keydown", (e) => {
 });
 function closeMenu() { $("side").classList.remove("open"); $("backdrop").classList.add("hidden"); }
 $("menuBtn").onclick = openMenu;
-document.querySelector(".side .logo").onclick = () => route("home");
 $("backdrop").onclick = closeMenu;
 for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
   if (e.target.closest(".chev-btn")) { e.preventDefault(); perfOpen = !perfOpen; markPerfSub(); return; }   // arrow: only show / hide the sub-items
@@ -1640,7 +1626,7 @@ for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
   if (a.dataset.detail) $("tableView").scrollIntoView({ behavior: "smooth", block: "start" });
 };
 // Billing Details / Agent Detail / Trade Lane Detail sit under Performance in the sidebar (table view only).
-let perfOpen = false;   // Performance sub-items start hidden; the arrow next to Performance shows / hides them
+let perfOpen = true;    // Performance opens first with its sub-items shown; the arrow next to Performance shows / hides them
 function markPerfSub(page = currentPage) {
   $("perfSub").classList.toggle("hidden", !perfOpen);
   document.querySelector('.side nav a[data-page="sales"]:not(.sub)').setAttribute("aria-expanded", perfOpen);
@@ -3669,10 +3655,10 @@ $("importConfirm").onclick = async () => {
   showLogin();   // every page load (including a reload) starts at the sign-in screen
 })();
 
-// ============================================================ Home: ISO tank port operation animation
+// ============================================================ Login page: ISO tank port operation animation
 // The vessel berths, the STS crane discharges the ISO tank onto a terminal chassis, the RTG stacks it in the yard,
 // the external truck passes the OCR gate, is loaded, checked and leaves. Positions come from a looping clock,
-// and frames are only drawn while the Home page is shown.
+// and frames are only drawn while the login page is shown.
 (() => {
 
 const LOOP = 38;
@@ -3828,7 +3814,7 @@ function frame(t) {
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let clock = still ? 12 : 0, last = null;
   function tick(now) {
-    if (!$("homePage").classList.contains("hidden")) {
+    if (!$("login").classList.contains("hidden")) {
       if (last != null && !still) clock = (clock + Math.min(now - last, 100) / 1000) % LOOP;
       frame(clock);
     }
