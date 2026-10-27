@@ -378,8 +378,8 @@
   .quo-sum tbody tr:hover td { background: #EFF4FF; }
   .quo-sum tr.sub .nm { padding-left: 38px; font-weight: 500; color: var(--ink-soft); }
   .quo-sum tr.sub td { font-size: 12px; }
-  .quo-sum tr.gt0 td { border-top: 2px solid var(--line); }
-  .quo-sum tr.gt0 td, .quo-sum tr.gt1 td { background: var(--grand); font-weight: 700; }
+  .quo-sum tr.gt0 td { border-bottom: 2px solid var(--line); }   /* the Grand Total rows sit at the top, above the parties */
+  .quo-sum tr.gt1 td { background: var(--grand); font-weight: 700; }
   .inv-table th, .inv-table td { text-align: right; padding: 8px 10px; }
   .inv-table th { font-size: 10.5px; }
   .inv-table th.txt, .inv-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
@@ -3100,7 +3100,7 @@ function renderQuo() {
       <div class="note muted">Valid until ${monthLabel(thisMonth())}, not converted yet</div></button>`;
   $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${quoRangeLabel()} · by quotation month — click + for converted, a number for the quotations`;
   // months across the top (then Grand Total). One row per shipper / customer (most quotations first) with its number of
-  // quotations; +/− shows its Converted (Job No not blank) and % Converted rows. Grand Total rows at the bottom.
+  // quotations; +/− shows its Converted (Job No not blank) and % Converted rows. Grand Total rows at the top.
   for (const b of $("quoBy").children) b.setAttribute("aria-pressed", b.dataset.by === quo.by);
   const ms = monthsBetween(quo.from, quo.to), blank = quo.by === "shipper" ? "(No shipper)" : "(No customer)";
   const tally = () => ({ n: Object.fromEntries(ms.map((m) => [m, 0])), conv: Object.fromEntries(ms.map((m) => [m, 0])), tn: 0, tc: 0 });
@@ -3123,9 +3123,9 @@ function renderQuo() {
     if (open) body += row("sub", '<td class="nm">Converted Quotations</td>', cellsC(t, p)) + row("sub", '<td class="nm">% Converted</td>', cellsP(t));
   }
   $("quoTable").innerHTML = `<thead><tr><th class="nm">${quo.by === "shipper" ? "Shipper" : "Customer"}</th><th class="gt">Grand Total</th>${ms.map((m) => `<th>${monthLabel(m)}</th>`).join("")}</tr></thead><tbody>`
-    + (body || `<tr><td colspan="${ms.length + 2}" style="text-align:center;padding:30px;color:#94a3b8">No matching quotations</td></tr>`)
-    + row("gt0", '<td class="nm">Number of Quotations</td>', cellsN(total, "")) + row("gt1", '<td class="nm">Converted Quotations</td>', cellsC(total, ""))
-    + row("gt1", '<td class="nm">% Converted</td>', cellsP(total)) + "</tbody>";
+    + row("gt1", '<td class="nm">Number of Quotations</td>', cellsN(total, "")) + row("gt1", '<td class="nm">Converted Quotations</td>', cellsC(total, ""))
+    + row("gt1 gt0", '<td class="nm">% Converted</td>', cellsP(total))
+    + (body || `<tr><td colspan="${ms.length + 2}" style="text-align:center;padding:30px;color:#94a3b8">No matching quotations</td></tr>`) + "</tbody>";
   $("quoToggleAll").textContent = list.length && list.every(([p]) => quo.open.has(p)) ? "Collapse all" : "Expand all";
 }
 const quoParty = (x) => (quo.by === "shipper" ? x.shipper : x.customer) || "";
