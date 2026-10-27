@@ -22,6 +22,7 @@
 import { MongoClient, Binary } from "mongodb";
 import { createHash } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
+import { looksLikeSsoSession, verifySsoSession } from "./_sso.js";
 
 const DB_NAME = process.env.MONGODB_DB || "sar_iso_dashboard";
 // Google OAuth Web client (project "sar-iso-dashboard"). Not a secret; GOOGLE_CLIENT_ID overrides it.
@@ -48,7 +49,7 @@ export class HttpError extends Error {
 const list = (v) => (v || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
 /** admin: ADMIN_EMAILS or dashboardUsers role "admin"; viewer: dashboardUsers or ALLOWED_DOMAINS. */
-async function roleFor(email) {
+export async function roleFor(email) {
   const e = email.toLowerCase();
   if (list(process.env.ADMIN_EMAILS).includes(e)) return "admin";
   const db = await getDb();
@@ -79,11 +80,21 @@ async function verifyGoogleToken(idToken) {
   return user;
 }
 
-/** Returns { email, name, role } or throws 401/403. */
+/**
+ * Returns { email, name, role } or throws 401/403. Accepts a Google ID token or a
+ * Hub SSO session token (see _sso.js); the role is looked up live for either.
+ */
 export async function authenticate(req) {
   const h = req.headers.authorization || "";
   if (!h.startsWith("Bearer ")) throw new HttpError(401, "Not signed in");
-  const user = await verifyGoogleToken(h.slice(7));
+  const token = h.slice(7);
+  let user;
+  if (looksLikeSsoSession(token)) {
+    try { user = await verifySsoSession(token); }
+    catch (e) { throw new HttpError(401, "Sign-in expired. Please sign in again."); }
+  } else {
+    user = await verifyGoogleToken(token);
+  }
   const role = await roleFor(user.email);
   if (!role) throw new HttpError(403, `${user.email} does not have access to this dashboard`, "no_access");
   return { ...user, role };

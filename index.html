@@ -3651,6 +3651,11 @@ $("importConfirm").onclick = async () => {
 (async () => {
   try { googleClientId = (await (await fetch("/api/mongo?config=1")).json()).googleClientId; } catch {}
   try { sessionStorage.removeItem(TOKEN_KEY); } catch {}
+  // Hub SSO: /api/sso-verify leaves a session token here for one page load. Take it into memory and delete it,
+  // so (like a Google sign-in) it is gone after a reload. An expired or missing one falls through to the login.
+  let hubToken = null;
+  try { hubToken = sessionStorage.getItem("sar_hub_sso_token"); sessionStorage.removeItem("sar_hub_sso_token"); } catch {}
+  if (hubToken && tokenValid(hubToken)) { idToken = hubToken; start(); return; }
   try { google.accounts.id.disableAutoSelect(); } catch {}
   showLogin();   // every page load (including a reload) starts at the sign-in screen
 })();
@@ -3821,6 +3826,18 @@ function frame(t) {
     last = now; requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
+})();
+</script>
+<script>
+(function () {
+  // SAR Systems Hub "Recent Dashboards" widget. Renders nothing unless this
+  // session came through the Hub's SSO handoff (see api/sso-verify.js).
+  var hubOrigin = 'https://systems.sarlogisolutions.com';
+  try { hubOrigin = sessionStorage.getItem('sar_hub_origin') || hubOrigin; } catch (e) {}
+  var s = document.createElement('script');
+  s.src = hubOrigin + '/widget.js';
+  s.setAttribute('data-hub-origin', hubOrigin);
+  document.body.appendChild(s);
 })();
 </script>
 </body>
