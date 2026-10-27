@@ -368,13 +368,15 @@
   #invPage { align-content: start; }
   .kpis.inv-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   /* Quotation Details summary: months across, one row per measure */
-  .quo-sum th:not(:first-child), .quo-sum td:not(:first-child) { text-align: right; }
-  .quo-sum td:first-child { min-width: 190px; font-weight: 600; position: sticky; left: 0; z-index: 1; background: var(--card); }
-  .quo-sum thead th:first-child { position: sticky; left: 0; z-index: 3; }
-  .quo-sum th.gt, .quo-sum td.gt { background: var(--grand); font-weight: 700; }
+  .quo-sum th, .quo-sum td { text-align: right; }
+  /* the shipper / customer name, then Grand Total; both stay frozen on the left */
+  .quo-sum .nm { position: sticky; left: 0; z-index: 2; text-align: left; font-family: "Plus Jakarta Sans", sans-serif; width: 280px; min-width: 280px; max-width: 280px;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; background: var(--card); }
+  .quo-sum .gt { position: sticky; left: 280px; z-index: 1; width: 110px; min-width: 110px; max-width: 110px; background: var(--grand); font-weight: 700; box-shadow: inset -1px 0 0 var(--line); }
+  .quo-sum thead .gt, .quo-sum thead .nm { z-index: 4; }
+  .quo-sum thead .gt { background: var(--grand); }
   .quo-sum tbody tr:hover td { background: #EFF4FF; }
-  .quo-sum td:first-child { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .quo-sum tr.sub td:first-child { padding-left: 38px; font-weight: 500; color: var(--ink-soft); }
+  .quo-sum tr.sub .nm { padding-left: 38px; font-weight: 500; color: var(--ink-soft); }
   .quo-sum tr.sub td { font-size: 12px; }
   .quo-sum tr.gt0 td { border-top: 2px solid var(--line); }
   .quo-sum tr.gt0 td, .quo-sum tr.gt1 td { background: var(--grand); font-weight: 700; }
@@ -1086,7 +1088,7 @@
         <button class="btn" id="quoXlsx">Export to Excel</button>
       </div>
     </div>
-    <div class="tbl-wrap"><table class="quo-sum" id="quoTable"></table></div>
+    <div class="tbl-wrap" style="max-height:680px"><table class="quo-sum" id="quoTable"></table></div>
   </section>
 </main>
 
@@ -3109,18 +3111,21 @@ function renderQuo() {
   const num = (v, p, m, k) => (v ? `<button class="num" data-p="${esc(p)}" data-m="${m}" data-k="${k}">${n0(v)}</button>` : dash);
   const pctOf = (n, c) => (n ? (100 * c / n).toFixed(1) + "%" : dash);
   // p = party name ("" = everyone); three rows: quotations, converted, % converted
-  const cellsN = (t, p) => ms.map((m) => `<td>${num(t.n[m], p, m, "all")}</td>`).join("") + `<td class="gt">${num(t.tn, p, "", "all")}</td>`;
-  const cellsC = (t, p) => ms.map((m) => `<td>${num(t.conv[m], p, m, "conv")}</td>`).join("") + `<td class="gt">${num(t.tc, p, "", "conv")}</td>`;
-  const cellsP = (t) => ms.map((m) => `<td>${pctOf(t.n[m], t.conv[m])}</td>`).join("") + `<td class="gt">${pctOf(t.tn, t.tc)}</td>`;
+  // the name, then Grand Total, then the months
+  const cellsN = (t, p) => [`<td class="gt">${num(t.tn, p, "", "all")}</td>`, ms.map((m) => `<td>${num(t.n[m], p, m, "all")}</td>`).join("")];
+  const cellsC = (t, p) => [`<td class="gt">${num(t.tc, p, "", "conv")}</td>`, ms.map((m) => `<td>${num(t.conv[m], p, m, "conv")}</td>`).join("")];
+  const cellsP = (t) => [`<td class="gt">${pctOf(t.tn, t.tc)}</td>`, ms.map((m) => `<td>${pctOf(t.n[m], t.conv[m])}</td>`).join("")];
+  const row = (cls, name, [gt, months]) => `<tr${cls ? ` class="${cls}"` : ""}>${name}${gt}${months}</tr>`;
   let body = "";
   for (const [p, t] of list) {
     const open = quo.open.has(p);
-    body += `<tr><td title="${esc(p)}"><button class="tg" data-tg="${esc(p)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(p)}</td>${cellsN(t, p)}</tr>`;
-    if (open) body += `<tr class="sub"><td>Converted Quotations</td>${cellsC(t, p)}</tr><tr class="sub"><td>% Converted</td>${cellsP(t)}</tr>`;
+    body += row("", `<td class="nm" title="${esc(p)}"><button class="tg" data-tg="${esc(p)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(p)}</td>`, cellsN(t, p));
+    if (open) body += row("sub", '<td class="nm">Converted Quotations</td>', cellsC(t, p)) + row("sub", '<td class="nm">% Converted</td>', cellsP(t));
   }
-  $("quoTable").innerHTML = `<thead><tr><th>${quo.by === "shipper" ? "Shipper" : "Customer"}</th>${ms.map((m) => `<th>${monthLabel(m)}</th>`).join("")}<th class="gt">Grand Total</th></tr></thead><tbody>`
+  $("quoTable").innerHTML = `<thead><tr><th class="nm">${quo.by === "shipper" ? "Shipper" : "Customer"}</th><th class="gt">Grand Total</th>${ms.map((m) => `<th>${monthLabel(m)}</th>`).join("")}</tr></thead><tbody>`
     + (body || `<tr><td colspan="${ms.length + 2}" style="text-align:center;padding:30px;color:#94a3b8">No matching quotations</td></tr>`)
-    + `<tr class="gt0"><td>Number of Quotations</td>${cellsN(total, "")}</tr><tr class="gt1"><td>Converted Quotations</td>${cellsC(total, "")}</tr><tr class="gt1"><td>% Converted</td>${cellsP(total)}</tr></tbody>`;
+    + row("gt0", '<td class="nm">Number of Quotations</td>', cellsN(total, "")) + row("gt1", '<td class="nm">Converted Quotations</td>', cellsC(total, ""))
+    + row("gt1", '<td class="nm">% Converted</td>', cellsP(total)) + "</tbody>";
   $("quoToggleAll").textContent = list.length && list.every(([p]) => quo.open.has(p)) ? "Collapse all" : "Expand all";
 }
 const quoParty = (x) => (quo.by === "shipper" ? x.shipper : x.customer) || "";
