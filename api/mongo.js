@@ -264,7 +264,7 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v3";
+const MR_SNAPSHOT_ID = "mr-inventory-v4";
 const OFF_HIRE_ACTIVITY = "OFF HIRE";
 const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice"];
 
@@ -336,6 +336,7 @@ async function buildMr(db, lastSync) {
 
 // Depot details for the Tank Inventory report, all from SARFD (key = upper-cased depot / location name):
 //   country       tblJob.originCountryName of jobs whose containerDepotName is the depot,
+//                 else tblBL.podCountryName of the import BLs of tanks moved into the depot (tblContainerMovement.importBlNo),
 //                 else the country of the depot's port (tblJob POL/POD -> origin/destination country)
 //   port          tblJob.polName of the depot's jobs, else where its empty tanks come in from (tblContainerMovement)
 //   agent         tblContainerMovement.agentName of movements into the depot
@@ -351,7 +352,7 @@ const INBOUND = ["PORT TO DEPOT EMPTY", "EMPTY RECEIVED FROM CONSIGNEE", "DEPOT 
 
 async function buildDepots(db) {
   const group = (k, v) => ({ $group: { _id: { k: k, v: v }, n: { $sum: 1 } } });
-  const [jobDepot, portCountryPol, portCountryPod, inbound, agents, billing] = await Promise.all([
+  const [jobDepot, portCountryPol, portCountryPod, inbound, agents, billing, importBls, blCountry] = await Promise.all([
     db.collection("tblJob").aggregate([{ $match: { containerDepotName: { $nin: [null, ""] } } },
       { $group: { _id: { k: "$containerDepotName", c: "$originCountryName", p: "$polName" }, n: { $sum: 1 } } }]).toArray(),
     db.collection("tblJob").aggregate([group("$polName", "$originCountryName")]).toArray(),
@@ -360,24 +361,30 @@ async function buildDepots(db) {
       group("$toLocationName", "$fromLocationName")]).toArray(),
     db.collection("tblContainerMovement").aggregate([{ $match: { deletedNo: { $exists: false } } }, group("$toLocationName", "$agentName")]).toArray(),
     db.collection("tblInvoice").aggregate([{ $match: { depotName: { $nin: [null, ""] } } }, group("$depotName", "$billingPartyName")]).toArray(),
+    db.collection("tblContainerMovement").aggregate([{ $match: { importBlNo: { $nin: [null, ""] }, deletedNo: { $exists: false } } },
+      group("$toLocationName", "$importBlNo")]).toArray(),
+    db.collection("tblBL").aggregate([{ $match: { blNo: { $nin: [null, ""] }, podCountryName: { $nin: [null, ""] } } },
+      { $group: { _id: "$blNo", c: { $first: "$podCountryName" } } }]).toArray(),
   ]);
 
   // tallies: key -> value -> count
   const tally = () => new Map();
   const add = (t, k, v, n) => { k = locKey(k); v = s(v); if (!k || !v) return; const m = t.get(k) || new Map(); m.set(v, (m.get(v) || 0) + n); t.set(k, m); };
   const top = (t, k) => { const m = t.get(k); if (!m) return ""; let best = "", bn = 0; for (const [v, n] of m) if (n > bn) { best = v; bn = n; } return best; };
-  const country = tally(), jobPort = tally(), portCountry = tally(), fromPort = tally(), agent = tally(), bill = tally();
+  const country = tally(), blCtry = tally(), jobPort = tally(), portCountry = tally(), fromPort = tally(), agent = tally(), bill = tally();
   for (const r of jobDepot) { add(country, r._id.k, cleanCountry(r._id.c), r.n); add(jobPort, r._id.k, r._id.p, r.n); }
   for (const r of [...portCountryPol, ...portCountryPod]) add(portCountry, r._id.k, cleanCountry(r._id.v), r.n);
+  const podOf = new Map(blCountry.map((b) => [locKey(b._id), cleanCountry(b.c)]));
+  for (const r of importBls) add(blCtry, r._id.k, podOf.get(locKey(r._id.v)), r.n);
   for (const r of inbound) if (locKey(r._id.v) !== locKey(r._id.k) && !/^SUB LEASE/i.test(s(r._id.v))) add(fromPort, r._id.k, r._id.v, r.n);
   for (const r of agents) add(agent, r._id.k, r._id.v, r.n);
   for (const r of billing) add(bill, r._id.k, cleanParty(r._id.v), r.n);
 
-  const keys = new Set([...country.keys(), ...jobPort.keys(), ...fromPort.keys(), ...agent.keys(), ...bill.keys()]);
+  const keys = new Set([...country.keys(), ...blCtry.keys(), ...jobPort.keys(), ...fromPort.keys(), ...agent.keys(), ...bill.keys()]);
   const out = {};
   for (const k of keys) {
     const port = top(jobPort, k) || top(fromPort, k);
-    out[k] = { country: top(country, k) || top(portCountry, locKey(port)), port, agent: top(agent, k), billingParty: top(bill, k) };
+    out[k] = { country: top(country, k) || top(blCtry, k) || top(portCountry, locKey(port)), port, agent: top(agent, k), billingParty: top(bill, k) };
   }
   // blanks: most common value among similar depots (see above)
   const commonBy = (field, by) => {
