@@ -377,12 +377,8 @@
   .quo-table thead th:nth-child(2) { z-index: 5; background: var(--thead); }
   .quo-table tfoot td:nth-child(2) { z-index: 4; background: var(--grand); }
   .quo-table td.neg { color: #C24A2E; }
-  /* Month-wise quotations: month on the left, numbers right-aligned */
-  .quo-month th:not(:first-child), .quo-month td:not(:first-child) { text-align: right; }
-  .quo-month td:first-child { min-width: 150px; font-weight: 600; position: sticky; left: 0; z-index: 1; background: var(--card, #fff); }
-  .quo-month th.gt, .quo-month td[data-gt] { background: var(--grand); font-weight: 700; }
-  .quo-month td.neg { color: #C24A2E; }
-  .quo-month tbody tr:hover { background: #EFF4FF; }
+  .quo-months { margin-bottom: 12px; width: fit-content; }
+  .quo-months button .c { margin-left: 6px; font-weight: 500; opacity: .75; font-size: 11.5px; }
   .inv-table th, .inv-table td { text-align: right; padding: 8px 10px; }
   .inv-table th { font-size: 10.5px; }
   .inv-table th.txt, .inv-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
@@ -1079,21 +1075,6 @@
 <main id="quoPage" class="hidden">
   <div class="alert hidden" id="quoErr" role="alert"></div>
   <div class="kpis quo-kpis" id="quoKpis"></div>
-  <!-- Month-wise: quotations per quotation-date month, as a table or a chart -->
-  <section class="card panel">
-    <div class="tools" style="justify-content:space-between">
-      <div><h2>Month-wise Quotations</h2><p class="sub" style="margin-bottom:0" id="quoMonthSub"></p></div>
-      <div class="tools" style="margin:0">
-        <button class="btn" id="quoMonthXlsx">Export to Excel</button>
-        <div class="view-toggle" id="quoViewToggle" role="group" aria-label="Show as">
-          <button data-mode="table"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>Table</button>
-          <button data-mode="chart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Chart</button>
-        </div>
-      </div>
-    </div>
-    <div id="quoMonthTableView"><div class="tbl-wrap"><table class="quo-month" id="quoMonthTable"></table></div></div>
-    <div id="quoMonthChartView" class="hidden"><div class="chart"><canvas id="quoMonthChart"></canvas></div></div>
-  </section>
   <section class="card panel">
     <div class="tools" style="justify-content:space-between">
       <div><h2>Quotation Register</h2><p class="sub" style="margin-bottom:0" id="quoTableSub"></p></div>
@@ -1102,6 +1083,7 @@
         <button class="btn" id="quoXlsx">Export to Excel</button>
       </div>
     </div>
+    <div class="seg quo-months" id="quoMonths" role="group" aria-label="Quotation month"></div>
     <div class="tbl-wrap" style="max-height:680px"><table class="quo-table" id="quoTable"></table></div>
   </section>
 </main>
@@ -3035,7 +3017,7 @@ $("bXlsx").onclick = () => {
 // ============================================================ Quotation
 // Same columns as the Syscon "Quotation Register" report. Built only from SARFD tables in MongoDB:
 // tblRateRequest (quotation header, charge lines → buy / sell, tank lines → container quantity) and tblJob (Job No).
-const quo = { data: null, from: "", to: "", months: [], q: "", drill: null, drillQ: "", mode: store.get("sar.quoMode", "table") === "chart" ? "chart" : "table" };
+const quo = { data: null, from: "", to: "", months: [], month: "", q: "", drill: null, drillQ: "" };   // month = register tab ("" = All)
 // Follow-up list: valid until this month (validity date in the current month) and no Job No yet
 const quoFollowUp = (x) => !x.jobs.length && (x.validity || "").slice(0, 7) === thisMonth();
 const QUO_COLS = [   // h = heading, g = value, k = txt | date | num | amt, sum = totalled in the Grand Total row
@@ -3093,7 +3075,8 @@ $("quoFrom").onchange = (e) => { quo.from = e.target.value; if (quo.to < quo.fro
 $("quoTo").onchange = (e) => { quo.to = e.target.value; if (quo.from > quo.to) { quo.from = quo.to; $("quoFrom").value = quo.from; } renderQuo(); };
 $("quoSearch").oninput = (e) => { quo.q = e.target.value; renderQuo(); };
 
-function quoRows() {   // oldest first, like the Syscon report (Sr No 1 = earliest quotation)
+const quoMonthOk = () => { if (quo.month && (quo.month < quo.from || quo.month > quo.to)) quo.month = ""; };
+function quoRowsAll() {   // every month in the range; oldest first, like the Syscon report (Sr No 1 = earliest quotation)
   const q = quo.q.toLowerCase();
   const list = (quo.data?.quotes || []).filter((x) => { const m = x.date.slice(0, 7); return m >= quo.from && m <= quo.to; })
     .filter((x) => !q || [x.no, x.jobs.join(" "), x.customer, x.shipper, x.consignee, x.plr, x.pol, x.pod, x.fpd, x.commodity, x.createdBy]
@@ -3101,21 +3084,31 @@ function quoRows() {   // oldest first, like the Syscon report (Sr No 1 = earlie
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.no.localeCompare(b.no)));
   return colFilterApply("quoTable", list, [null, ...QUO_COLS.map((c) => c.g)]);   // column 0 is Sr No (no filter)
 }
+function quoRows() {   // the register's rows: the month tab on top of the range, search and column filters
+  const all = quoRowsAll();
+  return quo.month ? all.filter((x) => x.date.slice(0, 7) === quo.month) : all;
+}
+const quoRangeLabel = () => (quo.month ? monthLabel(quo.month) : `${monthLabel(quo.from)} – ${monthLabel(quo.to)}`);
 function renderQuo() {
   if (!quo.data) return;
-  const rows = quoRows(), base = rows, dash = '<span class="dash">—</span>';
+  quoMonthOk();
+  const all = quoRowsAll(), rows = quo.month ? all.filter((x) => x.date.slice(0, 7) === quo.month) : all, base = rows, dash = '<span class="dash">—</span>';
+  // month tabs across the top of the register, each with its number of quotations
+  const per = all.reduce((m, x) => m.set(x.date.slice(0, 7), (m.get(x.date.slice(0, 7)) || 0) + 1), new Map());
+  $("quoMonths").innerHTML = [["", "All", all.length], ...monthsBetween(quo.from, quo.to).map((m) => [m, monthLabel(m), per.get(m) || 0])]
+    .map(([m, l, n]) => `<button data-m="${m}" aria-pressed="${m === quo.month}">${l}<span class="c">${n0(n)}</span></button>`).join("");
   $("quoSub").textContent = "";   // no subtitle under "Quotation" (only "Loading…" while the data loads)
   // KPIs follow the table (months, search, column filters). Converted = the quotation has a Job No in tblJob.
   const conv = base.filter((x) => x.jobs.length).length, pct = base.length ? (100 * conv / base.length).toFixed(1) : "0.0";
   const follow = base.filter(quoFollowUp).length;
   // each card opens a pop-up table of its quotations
   $("quoKpis").innerHTML = `<button class="kpi" data-k="all" style="border-top-color:#1E3A8A" title="Show these quotations"><div class="lbl">Number of Quotations</div><div class="val">${n0(base.length)}</div>
-      <div class="note muted">${monthLabel(quo.from)} – ${monthLabel(quo.to)}</div></button>
+      <div class="note muted">${quoRangeLabel()}</div></button>
     <button class="kpi" data-k="conv" style="border-top-color:#1F8A4C" title="Show the converted quotations"><div class="lbl">Converted Quotations</div><div class="val">${n0(conv)}</div>
       <div class="note">${pct}% converted · ${n0(base.length - conv)} not converted</div></button>
     <button class="kpi" data-k="follow" style="border-top-color:#D98E04" title="Show the follow-up list"><div class="lbl">Expiring This Month · No Job</div><div class="val">${n0(follow)}</div>
       <div class="note muted">Valid until ${monthLabel(thisMonth())}, not converted yet</div></button>`;
-  $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${monthLabel(quo.from)} – ${monthLabel(quo.to)} · amounts in USD`;
+  $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${quoRangeLabel()} · amounts in USD`;
   const cell = (c, x) => {
     const v = c.g(x);
     if (c.k === "txt") return `<td class="txt" title="${esc(v)}">${v ? esc(v) : dash}</td>`;
@@ -3129,90 +3122,12 @@ function renderQuo() {
       || `<tr><td colspan="${QUO_COLS.length + 1}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`)
     + `</tbody><tfoot><tr><td>Grand Total</td>${tot.map((v, i) => `<td class="${QUO_COLS[i].k === "txt" ? "txt" : ""}">${v == null ? "" : quoNum(v)}</td>`).join("")}</tr></tfoot>`;
   colFilterHead($("quoTable"), "quoTable");
-  renderQuoMonths(rows);
 }
 colFilterRender.quoTable = () => renderQuo();
-
-// ---- Month-wise: the register's quotations (same months, search and column filters) grouped by quotation-date month
-function quoMonthRows(rows) {
-  const by = new Map(monthsBetween(quo.from, quo.to).map((m) => [m, { month: m, n: 0, conv: 0, tanks: 0, buy: 0, sell: 0, profit: 0 }]));
-  for (const x of rows) {
-    const r = by.get(x.date.slice(0, 7)); if (!r) continue;
-    r.n++; if (x.jobs.length) r.conv++;
-    r.tanks += x.tanks || 0; r.buy += x.buy || 0; r.sell += x.sell || 0; r.profit += x.profit || 0;
-  }
-  return [...by.values()];
-}
-const quoPct = (r) => (r.n ? (100 * r.conv / r.n).toFixed(1) + "%" : "–");
-function renderQuoMonths(rows) {
-  const months = quoMonthRows(rows), chart = quo.mode === "chart", dash = '<span class="dash">–</span>';
-  for (const b of $("quoViewToggle").children) b.setAttribute("aria-pressed", b.dataset.mode === quo.mode);
-  $("quoMonthTableView").classList.toggle("hidden", chart);
-  $("quoMonthChartView").classList.toggle("hidden", !chart);
-  $("quoMonthSub").textContent = chart ? "Quotations and converted quotations by quotation month — click a bar for the quotations"
-                                       : "By quotation month — click a number for the quotations · amounts in USD";
-  const tot = months.reduce((a, r) => { for (const k of ["n", "conv", "tanks", "buy", "sell", "profit"]) a[k] += r[k]; return a; }, { n: 0, conv: 0, tanks: 0, buy: 0, sell: 0, profit: 0 });
-  if (!chart) {
-    // months run across (oldest → newest, then Grand Total); one row per measure
-    const num = (v, m, k) => (v ? `<button class="num" data-m="${m}" data-k="${k}">${n0(v)}</button>` : dash);
-    const amt = (v) => `<td${v < 0 ? ' class="neg"' : ""}>${v ? quoNum(Math.round(v)) : dash}</td>`;
-    const cols = [...months, { ...tot, month: "" }];
-    const MEASURES = [
-      ["Quotations", (r) => `<td>${num(r.n, r.month, "all")}</td>`],
-      ["Converted", (r) => `<td>${num(r.conv, r.month, "conv")}</td>`],
-      ["Not Converted", (r) => `<td>${num(r.n - r.conv, r.month, "open")}</td>`],
-      ["Conversion %", (r) => `<td>${quoPct(r)}</td>`],
-      ["Container Quantity", (r) => `<td>${r.tanks ? n0(r.tanks) : dash}</td>`],
-      ["Buy Amount", (r) => amt(r.buy)],
-      ["Sell Amount", (r) => amt(r.sell)],
-      ["Profit", (r) => amt(r.profit)],
-    ];
-    $("quoMonthTable").innerHTML = `<thead><tr><th></th>${months.map((r) => `<th>${monthLabel(r.month)}</th>`).join("")}<th class="gt">Grand Total</th></tr></thead>`
-      + `<tbody>${MEASURES.map(([h, f]) => `<tr><td>${h}</td>${cols.map((r, i) => f(r).replace("<td", i === months.length ? '<td data-gt="1"' : "<td")).join("")}</tr>`).join("")}</tbody>`;
-    return;
-  }
-  charts.quoMonth?.destroy();
-  charts.quoMonth = new Chart($("quoMonthChart"), {
-    type: "bar",
-    data: { labels: months.map((r) => monthLabel(r.month)), datasets: [
-      { label: "Quotations", data: months.map((r) => r.n), backgroundColor: "#1E3A8A", borderRadius: 4, maxBarThickness: 34 },
-      { label: "Converted", data: months.map((r) => r.conv), backgroundColor: "#1F8A4C", borderRadius: 4, maxBarThickness: 34 },
-    ] },
-    options: {
-      maintainAspectRatio: false, animation: false, layout: { padding: { top: 18 } },
-      plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10 } },
-                 valueLabels: { format: (v) => (v ? n0(v) : "") },
-                 tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${n0(c.raw)}${c.datasetIndex === 1 ? ` (${quoPct(months[c.dataIndex])})` : ""}` } } },
-      scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: "#e2e8f0" } }, x: { grid: { display: false } } },
-      onClick: (_, els) => { if (els[0]) openQuoMonth(months[els[0].index].month, els[0].datasetIndex === 1 ? "conv" : "all"); },
-      onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
-    },
-  });
-}
-function openQuoMonth(m, k) {   // m = "" for every month in the range
-  const when = m ? monthLabel(m) : `${monthLabel(quo.from)} – ${monthLabel(quo.to)}`, inMonth = (x) => !m || x.date.slice(0, 7) === m;
-  if (k === "all") openQuotes(`Quotations › ${when}`, inMonth);
-  if (k === "conv") openQuotes(`Converted Quotations › ${when}`, (x) => inMonth(x) && x.jobs.length > 0);
-  if (k === "open") openQuotes(`Not Converted › ${when}`, (x) => inMonth(x) && !x.jobs.length);
-}
-$("quoMonthTable").onclick = (e) => { const b = e.target.closest("button.num"); if (b) openQuoMonth(b.dataset.m, b.dataset.k); };
-$("quoViewToggle").onclick = (e) => {
-  const m = e.target.closest("button[data-mode]")?.dataset.mode;
-  if (m && m !== quo.mode) { quo.mode = m; store.set("sar.quoMode", m); renderQuo(); }
-};
-$("quoMonthXlsx").onclick = () => {
-  if (!quo.data) return;
-  const months = quoMonthRows(quoRows()), r2 = (v) => Math.round(v * 100) / 100;
-  const tot = months.reduce((a, r) => { for (const k of ["n", "conv", "tanks", "buy", "sell", "profit"]) a[k] += r[k]; return a; }, { n: 0, conv: 0, tanks: 0, buy: 0, sell: 0, profit: 0 });
-  const rows = [["Quotations", (r) => r.n], ["Converted", (r) => r.conv], ["Not Converted", (r) => r.n - r.conv],
-    ["Conversion %", (r) => (r.n ? Math.round(1000 * r.conv / r.n) / 10 : null)], ["Container Quantity", (r) => r.tanks],
-    ["Buy Amount", (r) => r2(r.buy)], ["Sell Amount", (r) => r2(r.sell)], ["Profit", (r) => r2(r.profit)]]
-    .map(([h, f]) => Object.fromEntries([["Measure", h], ...months.map((r) => [monthLabel(r.month), f(r)]), ["Grand Total", f(tot)]]));
-  writeXlsx(`SAR_Quotations_Month_wise_${quo.from}_to_${quo.to}.xlsx`, [["Month-wise", rows, [20, ...months.map(() => 11), 13]]]);
-};
+$("quoMonths").onclick = (e) => { const b = e.target.closest("button[data-m]"); if (b) { quo.month = b.dataset.m; renderQuo(); } };
 $("quoKpis").onclick = (e) => {
   const k = e.target.closest(".kpi[data-k]")?.dataset.k; if (!k) return;
-  const range = `${monthLabel(quo.from)} – ${monthLabel(quo.to)}`;
+  const range = quoRangeLabel();
   if (k === "all") openQuotes(`Quotations › ${range}`, () => true);
   if (k === "conv") openQuotes(`Converted Quotations › ${range}`, (x) => x.jobs.length > 0);
   if (k === "follow") openQuotes(`Expiring This Month · No Job › valid until ${monthLabel(thisMonth())}`, quoFollowUp);
@@ -3254,7 +3169,7 @@ $("qXlsx").onclick = () => {
 $("quoXlsx").onclick = () => {
   const d = (v) => (v ? new Date(v + "T00:00") : "");
   const rows = quoRows().map((x, i) => Object.fromEntries([["Sr No", i + 1], ...QUO_COLS.map((c) => [c.h, c.k === "date" ? d(c.g(x)) : c.g(x) ?? ""])]));
-  writeXlsx(`SAR_Quotation_Register_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Register", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
+  writeXlsx(`SAR_Quotation_Register_${quo.month || `${quo.from}_to_${quo.to}`}.xlsx`, [["Quotation Register", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 11, 11, 11, 18], 2]]);
 };
 
 // ============================================================ Finance
