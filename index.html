@@ -377,6 +377,11 @@
   .quo-table thead th:nth-child(2) { z-index: 5; background: var(--thead); }
   .quo-table tfoot td:nth-child(2) { z-index: 4; background: var(--grand); }
   .quo-table td.neg { color: #C24A2E; }
+  /* Month-wise quotations: month on the left, numbers right-aligned */
+  .quo-month th:not(:first-child), .quo-month td:not(:first-child) { text-align: right; }
+  .quo-month td:first-child { min-width: 120px; font-weight: 600; }
+  .quo-month td.neg { color: #C24A2E; }
+  .quo-month tbody tr:hover { background: #EFF4FF; }
   .inv-table th, .inv-table td { text-align: right; padding: 8px 10px; }
   .inv-table th { font-size: 10.5px; }
   .inv-table th.txt, .inv-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
@@ -1073,6 +1078,21 @@
 <main id="quoPage" class="hidden">
   <div class="alert hidden" id="quoErr" role="alert"></div>
   <div class="kpis quo-kpis" id="quoKpis"></div>
+  <!-- Month-wise: quotations per quotation-date month, as a table or a chart -->
+  <section class="card panel">
+    <div class="tools" style="justify-content:space-between">
+      <div><h2>Month-wise Quotations</h2><p class="sub" style="margin-bottom:0" id="quoMonthSub"></p></div>
+      <div class="tools" style="margin:0">
+        <button class="btn" id="quoMonthXlsx">Export to Excel</button>
+        <div class="view-toggle" id="quoViewToggle" role="group" aria-label="Show as">
+          <button data-mode="table"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>Table</button>
+          <button data-mode="chart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Chart</button>
+        </div>
+      </div>
+    </div>
+    <div id="quoMonthTableView"><div class="tbl-wrap"><table class="quo-month" id="quoMonthTable"></table></div></div>
+    <div id="quoMonthChartView" class="hidden"><div class="chart"><canvas id="quoMonthChart"></canvas></div></div>
+  </section>
   <section class="card panel">
     <div class="tools" style="justify-content:space-between">
       <div><h2>Quotation Register</h2><p class="sub" style="margin-bottom:0" id="quoTableSub"></p></div>
@@ -3014,7 +3034,7 @@ $("bXlsx").onclick = () => {
 // ============================================================ Quotation
 // Same columns as the Syscon "Quotation Register" report. Built only from SARFD tables in MongoDB:
 // tblRateRequest (quotation header, charge lines → buy / sell, tank lines → container quantity) and tblJob (Job No).
-const quo = { data: null, from: "", to: "", months: [], q: "", drill: null, drillQ: "" };
+const quo = { data: null, from: "", to: "", months: [], q: "", drill: null, drillQ: "", mode: store.get("sar.quoMode", "table") === "chart" ? "chart" : "table" };
 // Follow-up list: valid until this month (validity date in the current month) and no Job No yet
 const quoFollowUp = (x) => !x.jobs.length && (x.validity || "").slice(0, 7) === thisMonth();
 const QUO_COLS = [   // h = heading, g = value, k = txt | date | num | amt, sum = totalled in the Grand Total row
@@ -3108,8 +3128,75 @@ function renderQuo() {
       || `<tr><td colspan="${QUO_COLS.length + 1}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`)
     + `</tbody><tfoot><tr><td>Grand Total</td>${tot.map((v, i) => `<td class="${QUO_COLS[i].k === "txt" ? "txt" : ""}">${v == null ? "" : quoNum(v)}</td>`).join("")}</tr></tfoot>`;
   colFilterHead($("quoTable"), "quoTable");
+  renderQuoMonths(rows);
 }
 colFilterRender.quoTable = () => renderQuo();
+
+// ---- Month-wise: the register's quotations (same months, search and column filters) grouped by quotation-date month
+function quoMonthRows(rows) {
+  const by = new Map(monthsBetween(quo.from, quo.to).map((m) => [m, { month: m, n: 0, conv: 0, tanks: 0, buy: 0, sell: 0, profit: 0 }]));
+  for (const x of rows) {
+    const r = by.get(x.date.slice(0, 7)); if (!r) continue;
+    r.n++; if (x.jobs.length) r.conv++;
+    r.tanks += x.tanks || 0; r.buy += x.buy || 0; r.sell += x.sell || 0; r.profit += x.profit || 0;
+  }
+  return [...by.values()];
+}
+const quoPct = (r) => (r.n ? (100 * r.conv / r.n).toFixed(1) + "%" : "–");
+function renderQuoMonths(rows) {
+  const months = quoMonthRows(rows), chart = quo.mode === "chart", dash = '<span class="dash">–</span>';
+  for (const b of $("quoViewToggle").children) b.setAttribute("aria-pressed", b.dataset.mode === quo.mode);
+  $("quoMonthTableView").classList.toggle("hidden", chart);
+  $("quoMonthChartView").classList.toggle("hidden", !chart);
+  $("quoMonthSub").textContent = chart ? "Quotations and converted quotations by quotation month — click a bar for the quotations"
+                                       : "By quotation month — click a number for the quotations · amounts in USD";
+  const tot = months.reduce((a, r) => { for (const k of ["n", "conv", "tanks", "buy", "sell", "profit"]) a[k] += r[k]; return a; }, { n: 0, conv: 0, tanks: 0, buy: 0, sell: 0, profit: 0 });
+  if (!chart) {
+    const num = (v, m, k) => (v ? `<button class="num" data-m="${m}" data-k="${k}">${n0(v)}</button>` : dash);
+    const amt = (v) => `<td${v < 0 ? ' class="neg"' : ""}>${v ? quoNum(Math.round(v)) : dash}</td>`;
+    const line = (r, m) => `<td>${num(r.n, m, "all")}</td><td>${num(r.conv, m, "conv")}</td><td>${num(r.n - r.conv, m, "open")}</td><td>${quoPct(r)}</td>`
+      + `<td>${r.tanks ? n0(r.tanks) : dash}</td>${amt(r.buy)}${amt(r.sell)}${amt(r.profit)}`;
+    $("quoMonthTable").innerHTML = `<thead><tr><th>Month</th><th>Quotations</th><th>Converted</th><th>Not Converted</th><th>Conversion %</th><th>Container Quantity</th><th>Buy Amount</th><th>Sell Amount</th><th>Profit</th></tr></thead>`
+      + `<tbody>${months.map((r) => `<tr><td>${monthLabel(r.month)}</td>${line(r, r.month)}</tr>`).join("")}</tbody>`
+      + `<tfoot><tr><td>Grand Total</td>${line(tot, "")}</tr></tfoot>`;
+    return;
+  }
+  charts.quoMonth?.destroy();
+  charts.quoMonth = new Chart($("quoMonthChart"), {
+    type: "bar",
+    data: { labels: months.map((r) => monthLabel(r.month)), datasets: [
+      { label: "Quotations", data: months.map((r) => r.n), backgroundColor: "#1E3A8A", borderRadius: 4, maxBarThickness: 34 },
+      { label: "Converted", data: months.map((r) => r.conv), backgroundColor: "#1F8A4C", borderRadius: 4, maxBarThickness: 34 },
+    ] },
+    options: {
+      maintainAspectRatio: false, animation: false, layout: { padding: { top: 18 } },
+      plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10 } },
+                 valueLabels: { format: (v) => (v ? n0(v) : "") },
+                 tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${n0(c.raw)}${c.datasetIndex === 1 ? ` (${quoPct(months[c.dataIndex])})` : ""}` } } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: "#e2e8f0" } }, x: { grid: { display: false } } },
+      onClick: (_, els) => { if (els[0]) openQuoMonth(months[els[0].index].month, els[0].datasetIndex === 1 ? "conv" : "all"); },
+      onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
+    },
+  });
+}
+function openQuoMonth(m, k) {   // m = "" for every month in the range
+  const when = m ? monthLabel(m) : `${monthLabel(quo.from)} – ${monthLabel(quo.to)}`, inMonth = (x) => !m || x.date.slice(0, 7) === m;
+  if (k === "all") openQuotes(`Quotations › ${when}`, inMonth);
+  if (k === "conv") openQuotes(`Converted Quotations › ${when}`, (x) => inMonth(x) && x.jobs.length > 0);
+  if (k === "open") openQuotes(`Not Converted › ${when}`, (x) => inMonth(x) && !x.jobs.length);
+}
+$("quoMonthTable").onclick = (e) => { const b = e.target.closest("button.num"); if (b) openQuoMonth(b.dataset.m, b.dataset.k); };
+$("quoViewToggle").onclick = (e) => {
+  const m = e.target.closest("button[data-mode]")?.dataset.mode;
+  if (m && m !== quo.mode) { quo.mode = m; store.set("sar.quoMode", m); renderQuo(); }
+};
+$("quoMonthXlsx").onclick = () => {
+  if (!quo.data) return;
+  const rows = quoMonthRows(quoRows()).map((r) => ({ Month: monthLabel(r.month), Quotations: r.n, Converted: r.conv, "Not Converted": r.n - r.conv,
+    "Conversion %": r.n ? Math.round(1000 * r.conv / r.n) / 10 : null, "Container Quantity": r.tanks, "Buy Amount": Math.round(r.buy * 100) / 100,
+    "Sell Amount": Math.round(r.sell * 100) / 100, Profit: Math.round(r.profit * 100) / 100 }));
+  writeXlsx(`SAR_Quotations_Month_wise_${quo.from}_to_${quo.to}.xlsx`, [["Month-wise", rows, [10, 12, 12, 14, 13, 18, 14, 14, 14]]]);
+};
 $("quoKpis").onclick = (e) => {
   const k = e.target.closest(".kpi[data-k]")?.dataset.k; if (!k) return;
   const range = `${monthLabel(quo.from)} – ${monthLabel(quo.to)}`;
