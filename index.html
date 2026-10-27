@@ -3103,7 +3103,7 @@ function renderQuo() {
       <div class="note muted">Valid until ${monthLabel(thisMonth())}, not converted yet</div></button>`;
   $("quoTableSub").textContent = `${n0(rows.length)} quotations · ${quoRangeLabel()} · by quotation month — click + for converted and containers, a number for the quotations`;
   // months across the top (then Grand Total). One row per shipper / customer (most quotations first) with its number of
-  // quotations; +/− shows its Converted (Job No not blank), % Converted and Container Count rows. Grand Total rows at the top.
+  // quotations; +/− shows its Converted (Job No not blank), Converted Quotation % and Container Count rows. Grand Total rows at the top.
   // Container Count = containers quoted (tblRateRequest tank lines, qty_quantity), not tanks actually used.
   for (const b of $("quoBy").children) b.setAttribute("aria-pressed", b.dataset.by === quo.by);
   const ms = monthsBetween(quo.from, quo.to), blank = quo.by === "shipper" ? "(No shipper)" : "(No customer)";
@@ -3126,12 +3126,12 @@ function renderQuo() {
   for (const [p, t] of list) {
     const open = quo.open.has(p);
     body += row("", `<td class="nm" title="${esc(p)}"><button class="tg" data-tg="${esc(p)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(p)}</td>`, cellsN(t, p));
-    if (open) body += row("sub", '<td class="nm">Converted Quotations</td>', cellsC(t, p)) + row("sub", '<td class="nm">% Converted</td>', cellsP(t))
+    if (open) body += row("sub", '<td class="nm">Converted Quotations</td>', cellsC(t, p)) + row("sub", '<td class="nm">Converted Quotation %</td>', cellsP(t))
       + row("sub", '<td class="nm">Container Count</td>', cellsT(t, p));
   }
   $("quoTable").innerHTML = `<thead><tr><th class="nm">${quo.by === "shipper" ? "Shipper" : "Customer"}</th><th class="gt">Grand Total</th>${ms.map((m) => `<th>${monthLabel(m)}</th>`).join("")}</tr></thead><tbody>`
     + row("gt1", '<td class="nm">Number of Quotations</td>', cellsN(total, "")) + row("gt1", '<td class="nm">Converted Quotations</td>', cellsC(total, ""))
-    + row("gt1", '<td class="nm">% Converted</td>', cellsP(total)) + row("gt1 gt0", '<td class="nm">Container Count</td>', cellsT(total, ""))
+    + row("gt1", '<td class="nm">Converted Quotation %</td>', cellsP(total)) + row("gt1 gt0", '<td class="nm">Container Count</td>', cellsT(total, ""))
     + (body || `<tr><td colspan="${ms.length + 2}" style="text-align:center;padding:30px;color:#94a3b8">No matching quotations</td></tr>`) + "</tbody>";
   $("quoToggleAll").textContent = list.length && list.every(([p]) => quo.open.has(p)) ? "Collapse all" : "Expand all";
 }
