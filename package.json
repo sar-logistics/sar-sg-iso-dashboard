@@ -2,8 +2,11 @@
   "name": "sar-iso-dashboard",
   "private": true,
   "type": "module",
-  "engines": { "node": "22.x" },
+  "engines": {
+    "node": "22.x"
+  },
   "dependencies": {
-    "mongodb": "6.20.0"
+    "mongodb": "6.20.0",
+    "jose": "^4.15.5"
   }
 }
