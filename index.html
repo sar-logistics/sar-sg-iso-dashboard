@@ -587,9 +587,11 @@
 
   .side .logo { cursor: pointer; }   /* the logo opens Home */
   /* ---- Home page: ISO tank port animation (all ids / classes prefixed pa-) ---- */
-  /* full screen: fills the area beside the menu and below the top bar */
+  /* full screen: fills the whole area beside the menu; on this page the top bar floats, see-through, over the sky */
   main#homePage { max-width: none; padding: 0; display: block; }
-  #homePage .pa-full { position: relative; height: calc(100vh - var(--topbar-h, 70px)); min-height: 320px; overflow: hidden;
+  .content.on-home .topbar { position: absolute; left: 0; right: 0; top: 0; background: transparent; border-color: transparent; box-shadow: none; backdrop-filter: none; }
+  .content.on-home { position: relative; }
+  #homePage .pa-full { position: relative; height: 100vh; min-height: 320px; overflow: hidden;
                        background: linear-gradient(#C9DAF3, #E8F0FB 55%, #F4F8FE); }
   #homePage .pa-title { position: absolute; top: 5%; left: 0; right: 0; z-index: 1; margin: 0; padding: 0 16px; text-align: center;
                         font-size: clamp(20px, 2.6vw, 34px); font-weight: 700; color: var(--navy, #1E3A5F); }
@@ -1587,6 +1589,7 @@ function route(next) {
   document.title = `${PAGES[page]} · SAR ISO Tank SG`;
   $("app").classList.toggle("hidden", page !== "sales");
   $("homePage").classList.toggle("hidden", page !== "home");
+  $("topbar").parentElement.classList.toggle("on-home", page === "home");   // top bar floats over the animation
   $("adminPage").classList.toggle("hidden", page !== "admin");
   $("usagePage").classList.toggle("hidden", page !== "usage");
   $("mrPage").classList.toggle("hidden", page !== "mr");
