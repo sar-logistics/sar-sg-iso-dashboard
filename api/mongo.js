@@ -654,10 +654,15 @@ async function deployDataset() {
 //   tblJob          Job No = every job whose rateRequestNo is the quotation (comma separated)
 
 const QUOT_COMPANIES = ["SAR Global PTE Ltd"];   // plus the old company's quotations in OLD_COMPANY_MONTHS (Jan-26), as in Sales / Tank Deployment
-const QUOT_SNAPSHOT_ID = "quotations-v3";
+const QUOT_SNAPSHOT_ID = "quotations-v4";
+// Shipper / customer spellings → one name, from the "Shipper/Customer Mapping" sheet, loaded into partyMappings by
+// sarfd_sync.py. Documents are keyed "shipper|KEY" / "customer|KEY" (keep partyKey in step with party_key() there).
+const partyKey = (v) => unEntity(v).toUpperCase();
 const CARGO_SHORT = { HAZARDOUS: "HAZ", GENERAL: "GEN" };
 
-async function buildQuotations(db, lastSync) {
+async function buildQuotations(db, lastSync, parties = []) {
+  const nameOf = new Map(parties.map((p) => [p._id, s(p.name)]));
+  const party = (kind, v) => { const n = unEntity(v); return nameOf.get(`${kind}|${partyKey(n)}`) || n; };
   const rr = db.collection("tblRateRequest");
   const match = { companyName: { $in: [...QUOT_COMPANIES, OLD_COMPANY] } };
   const [heads, money, qty] = await Promise.all([
@@ -689,7 +694,7 @@ async function buildQuotations(db, lastSync) {
     quotes.push({ no: s(h.rateRequestNo), date, validity: day(h.validityTo), jobs: byJob.get(h.rateRequestNo) || [],
       oFree: num(h.originFreeDays ?? h.originDemurrageFreeDays), oRate: num(h.originDemurrageRate),
       dFree: num(h.destinationFreeDays ?? h.destinationDemurrageFreeDays), dRate: num(h.destinationDemurrageRate),
-      customer: unEntity(h.customerName), salesExec: unEntity(h.salesExecutiveName), shipper: unEntity(h.shipperName), consignee: unEntity(h.consigneeName),
+      customer: party("customer", h.customerName), salesExec: unEntity(h.salesExecutiveName), shipper: party("shipper", h.shipperName), consignee: unEntity(h.consigneeName),
       sailing: day(h.expectedSailDate), plr: s(h.plrName), pol: s(h.polName), pod: s(h.podName), fpd: s(h.fpdName),
       cargo: CARGO_SHORT[cargo.toUpperCase()] || cargo, commodity: s(h.commodity), packages: num(h.noOfPackages) || 0, packageType: s(h.packageName),
       grossWt: num(h.cargoWt) || 0, tanks: q.n || 0,
@@ -706,14 +711,16 @@ async function quotationsDataset() {
     const db = await getDb();
     const lastOf = (table) => db.collection("sarfdSyncHistory").findOne(
       { table, status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } }, { sort: { startedAt: -1 }, projection: { startedAt: 1 } });
-    const [rq, job] = await Promise.all([lastOf("tblRateRequest"), lastOf("tblJob")]);
+    const [rq, job, parties] = await Promise.all([lastOf("tblRateRequest"), lastOf("tblJob"),
+      db.collection("partyMappings").find({}, { projection: { name: 1 } }).toArray()]);
     const iso = (x) => (x?.startedAt ? new Date(x.startedAt).toISOString() : null);
     const lastSync = iso(rq);
-    const key = createHash("sha1").update(`${QUOT_SNAPSHOT_ID}|${lastSync}|${iso(job)}`).digest("hex");
+    const partyMapKey = parties.map((p) => `${p._id}=${p.name}`).sort().join("|");   // a mapping sheet change rebuilds the data
+    const key = createHash("sha1").update(`${QUOT_SNAPSHOT_ID}|${lastSync}|${iso(job)}|${partyMapKey}`).digest("hex");
     const cache = db.collection("dashboardCache");
     const snap = await cache.findOne({ _id: QUOT_SNAPSHOT_ID });
     if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
-    const payload = await buildQuotations(db, lastSync);
+    const payload = await buildQuotations(db, lastSync, parties);
     const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
     await cache.replaceOne({ _id: QUOT_SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
     return payload;
