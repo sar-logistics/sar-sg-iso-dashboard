@@ -182,7 +182,7 @@ const properName = (v) => {
   });
 };
 
-async function buildSales(db, mappings, lastSync, tradelanes = []) {
+async function buildSales(db, mappings, lastSync, tradelanes = [], parties) {
   const catOf = new Map(mappings.map((m) => [normCharge(m.chargeName), CATEGORIES.includes(m.revenueCategory) ? m.revenueCategory : "Other"]));
   // Basket (Billing Details grouping) from the "Syscon Charges" sheet, loaded into chargeMappings.basket
   const basketOf = new Map(mappings.filter((m) => s(m.basket)).map((m) => [normCharge(m.chargeName), s(m.basket)]));
@@ -220,8 +220,8 @@ async function buildSales(db, mappings, lastSync, tradelanes = []) {
       category: catOf.get(charge) ?? "Other",
       basket: basketOf.get(charge) || "(Not mapped)",
       amount: (docType === "Credit Note" ? -1 : 1) * (r.chargeTotalAmountHc ?? 0),  // USD, credit notes negative
-      agent: s(r.billingPartyName) || "(Unknown)",
-      shipper: properName(s(r.shipperName)),
+      agent: parties.name("agent", r.billingPartyName) || "(Unknown)",
+      shipper: parties.name("shipper", r.shipperName),
       pol, pod,
       lane: blNo && pol && pod && !SUNDRY.has(r.voucherCode) ? `${pol} → ${pod}` : null,
       ...(() => {   // countryLane = origin → destination country, tradeLane = their trade lanes (regions)
@@ -239,29 +239,30 @@ async function buildSales(db, mappings, lastSync, tradelanes = []) {
 // The Atlas cluster downloads slowly (~100 KB/s), so the built dataset is kept gzipped in
 // `dashboardCache` and rebuilt only after a new tblInvoice sync or a charge-mapping change.
 const TTL_MS = 2 * 60 * 1000;
-const SNAPSHOT_ID = "sales-html-v8";
+const SNAPSHOT_ID = "sales-html-v9";
 
 async function salesDataset() {
   if (g._sarSales && Date.now() - g._sarSales.at < TTL_MS) return g._sarSales.data;
   const data = (async () => {
     const db = await getDb();
-    const [mappings, last, tradelanes] = await Promise.all([
+    const [mappings, last, tradelanes, parties] = await Promise.all([
       db.collection("chargeMappings").find({}, { projection: { _id: 0, chargeName: 1, revenueCategory: 1, basket: 1 } }).toArray(),
       db.collection("sarfdSyncHistory").findOne(
         { table: "tblInvoice", status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } },
         { sort: { startedAt: -1 }, projection: { startedAt: 1 } }),
       db.collection("tradelaneMappings").find({}, { projection: { tradelane: 1 } }).toArray(),
+      loadParties(db),
     ]);
     const lastSync = last?.startedAt ? new Date(last.startedAt).toISOString() : null;
     const mapKey = mappings.map((m) => `${normCharge(m.chargeName)}=${m.revenueCategory}/${m.basket || ""}`).sort().join("|");
     const laneKey = tradelanes.map((t) => `${t._id}=${t.tradelane}`).sort().join("|");   // a trade-lane sheet change rebuilds the data
-    const key = createHash("sha1").update(`${lastSync}|${mapKey}|${laneKey}`).digest("hex");
+    const key = createHash("sha1").update(`${lastSync}|${mapKey}|${laneKey}|${parties.key}`).digest("hex");
 
     const cache = db.collection("dashboardCache");
     const snap = await cache.findOne({ _id: SNAPSHOT_ID });
     if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
 
-    const payload = await buildSales(db, mappings, lastSync, tradelanes);
+    const payload = await buildSales(db, mappings, lastSync, tradelanes, parties);
     const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
     await cache.replaceOne({ _id: SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
     return payload;
@@ -610,10 +611,10 @@ async function tankStatusDataset() {
 // HBL date, tanks = the BL's live container list. Checked BL by BL against the dump (Feb–Sep 2026).
 
 const DEPLOY_COMPANIES = ["SAR Global PTE Ltd"];
-const DEPLOY_SNAPSHOT_ID = "deploy-v3";
+const DEPLOY_SNAPSHOT_ID = "deploy-v4";
 const unEntity = (v) => s(v).replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim();
 
-async function buildDeploy(db, lastSync) {
+async function buildDeploy(db, lastSync, parties) {
   const bl = db.collection("tblBL");
   const [heads, tanks] = await Promise.all([
     bl.find({ recordType: "H", companyName: { $in: [...DEPLOY_COMPANIES, OLD_COMPANY] }, deletedNo: { $exists: false } },
@@ -631,7 +632,7 @@ async function buildDeploy(db, lastSync) {
     const date = day(h.hblDate || h.blDate); if (!date) continue;
     if (!DEPLOY_COMPANIES.includes(h.companyName) && !(h.companyName === OLD_COMPANY && OLD_COMPANY_MONTHS.includes(date.slice(0, 7)))) continue;
     const list = byBl.get(h.blId) || [];
-    bls.push({ bl: s(h.hblNo || h.blNo), date, shipper: properName(unEntity(h.shipperName)) || "(No shipper)", consignee: unEntity(h.consigneeName),
+    bls.push({ bl: s(h.hblNo || h.blNo), date, shipper: parties.name("shipper", h.shipperName) || "(No shipper)", consignee: unEntity(h.consigneeName),
                plrAgent: unEntity(h.plrAgentName) || "(No PLR agent)", polAgent: unEntity(h.polAgentName), podAgent: unEntity(h.podAgentName),
                plr: s(h.plrName), pol: s(h.polName), pod: s(h.podName), fpd: s(h.fpdName), job: s(h.exportJobNo), cargo: s(h.cargoTypeName),
                commodity: s(h.commodity).slice(0, 120), tanks: list });
@@ -648,11 +649,12 @@ async function deployDataset() {
       { table: "tblBL", status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } },
       { sort: { startedAt: -1 }, projection: { startedAt: 1 } });
     const lastSync = last?.startedAt ? new Date(last.startedAt).toISOString() : null;
-    const key = createHash("sha1").update(`${DEPLOY_SNAPSHOT_ID}|${lastSync}`).digest("hex");
+    const parties = await loadParties(db);
+    const key = createHash("sha1").update(`${DEPLOY_SNAPSHOT_ID}|${lastSync}|${parties.key}`).digest("hex");
     const cache = db.collection("dashboardCache");
     const snap = await cache.findOne({ _id: DEPLOY_SNAPSHOT_ID });
     if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
-    const payload = await buildDeploy(db, lastSync);
+    const payload = await buildDeploy(db, lastSync, parties);
     const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
     await cache.replaceOne({ _id: DEPLOY_SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
     return payload;
@@ -671,15 +673,24 @@ async function deployDataset() {
 //   tblJob          Job No = every job whose rateRequestNo is the quotation (comma separated)
 
 const QUOT_COMPANIES = ["SAR Global PTE Ltd"];   // plus the old company's quotations in OLD_COMPANY_MONTHS (Jan-26), as in Sales / Tank Deployment
-const QUOT_SNAPSHOT_ID = "quotations-v5";
+const QUOT_SNAPSHOT_ID = "quotations-v6";
 // Shipper / customer spellings → one name, from the "Shipper/Customer Mapping" sheet, loaded into partyMappings by
 // sarfd_sync.py. Documents are keyed "shipper|KEY" / "customer|KEY" (keep partyKey in step with party_key() there).
 const partyKey = (v) => unEntity(v).toUpperCase();
+// name(kind, v): the sheet's Actual Name for that spelling (kind = shipper | customer | agent), in proper case;
+// key: changes whenever the sheet does, so each page's snapshot is rebuilt
+async function loadParties(db) {
+  const list = await db.collection("partyMappings").find({}, { projection: { name: 1 } }).toArray();
+  const nameOf = new Map(list.map((p) => [p._id, s(p.name)]));
+  return {
+    key: createHash("sha1").update(list.map((p) => `${p._id}=${p.name}`).sort().join("|")).digest("hex"),
+    name: (kind, v) => { const n = unEntity(v); return properName(nameOf.get(`${kind}|${partyKey(n)}`) || n); },
+  };
+}
 const CARGO_SHORT = { HAZARDOUS: "HAZ", GENERAL: "GEN" };
 
-async function buildQuotations(db, lastSync, parties = []) {
-  const nameOf = new Map(parties.map((p) => [p._id, s(p.name)]));
-  const party = (kind, v) => { const n = unEntity(v); return properName(nameOf.get(`${kind}|${partyKey(n)}`) || n); };
+async function buildQuotations(db, lastSync, parties) {
+  const party = parties.name;
   const rr = db.collection("tblRateRequest");
   const match = { companyName: { $in: [...QUOT_COMPANIES, OLD_COMPANY] } };
   const [heads, money, qty] = await Promise.all([
@@ -728,12 +739,10 @@ async function quotationsDataset() {
     const db = await getDb();
     const lastOf = (table) => db.collection("sarfdSyncHistory").findOne(
       { table, status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } }, { sort: { startedAt: -1 }, projection: { startedAt: 1 } });
-    const [rq, job, parties] = await Promise.all([lastOf("tblRateRequest"), lastOf("tblJob"),
-      db.collection("partyMappings").find({}, { projection: { name: 1 } }).toArray()]);
+    const [rq, job, parties] = await Promise.all([lastOf("tblRateRequest"), lastOf("tblJob"), loadParties(db)]);
     const iso = (x) => (x?.startedAt ? new Date(x.startedAt).toISOString() : null);
     const lastSync = iso(rq);
-    const partyMapKey = parties.map((p) => `${p._id}=${p.name}`).sort().join("|");   // a mapping sheet change rebuilds the data
-    const key = createHash("sha1").update(`${QUOT_SNAPSHOT_ID}|${lastSync}|${iso(job)}|${partyMapKey}`).digest("hex");
+    const key = createHash("sha1").update(`${QUOT_SNAPSHOT_ID}|${lastSync}|${iso(job)}|${parties.key}`).digest("hex");
     const cache = db.collection("dashboardCache");
     const snap = await cache.findOne({ _id: QUOT_SNAPSHOT_ID });
     if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
@@ -764,9 +773,9 @@ const finCo = (name) => (name === OLD_COMPANY ? "old" : "global");
 const AR_VOUCHERS = ["PSI", "SLI", "SDI", "MRI"];
 const AP_VOUCHERS = ["PI", "PICI", "GP", "SDPI"];
 const SETTLEMENTS = ["BANK RECEIPT", "BANK PAYMENT", "JOURNAL VOUCHER", "CONTRA VOUCHER", "Principle Credit Note"];
-const FIN_SNAPSHOT_ID = "finance-v4";
+const FIN_SNAPSHOT_ID = "finance-v5";
 
-async function buildFinance(db, lastSync) {
+async function buildFinance(db, lastSync, parties) {
   const [heads, allocs, onAcc] = await Promise.all([
     db.collection("tblInvoice").find(
       { recordType: "H", companyName: { $in: FIN_COMPANIES }, voucherCode: { $in: [...AR_VOUCHERS, ...AP_VOUCHERS] }, invoiceNo: { $not: /^PRO/i } },
@@ -803,7 +812,7 @@ async function buildFinance(db, lastSync) {
     const ar = AR_VOUCHERS.includes(h.voucherCode);
     const amount = Math.round((h.totalInvoiceAmount ?? h.invoiceAmount ?? 0) * 100) / 100;
     const due = day(h.dueDate) || addDaysIso(date, Number(h.creditPeriod) || 0);
-    const doc = { co: finCo(h.companyName), side: ar ? "ar" : "ap", party: s(h.billingPartyName) || "(No party)", invoiceNo: s(h.invoiceNo), ref: ar ? s(h.invoiceNo) : s(h.vendorInvoiceNo) || s(h.invoiceNo),
+    const doc = { co: finCo(h.companyName), side: ar ? "ar" : "ap", party: parties.name("agent", h.billingPartyName) || "(No party)", invoiceNo: s(h.invoiceNo), ref: ar ? s(h.invoiceNo) : s(h.vendorInvoiceNo) || s(h.invoiceNo),
                   date, due, creditPeriod: Number(h.creditPeriod) || 0, voucher: h.voucherCode, currency: s(h.currencyCode) || "USD", amount, adjusted: 0,
                   bl: s(h.blNo), job: s(h.jobNo) };
     if (ar) { doc.adjusted = Math.min(amount, settled.get(key(h.invoiceNo)) || 0); docs.push(doc); }
@@ -828,10 +837,11 @@ async function buildFinance(db, lastSync) {
   const onAccount = { ar: {}, ap: {} }, onAccountOld = { ar: {}, ap: {} }, onAccountDocs = [];   // SAR Global / old company
   for (const v of onAcc) {
     const left = Math.round(((v.amount || 0) - (v.allocated || 0)) * 100) / 100;
-    if (left < 0.01 || !s(v.party)) continue;
+    const party = parties.name("agent", v.party);
+    if (left < 0.01 || !party) continue;
     const side = v.type === "BANK PAYMENT" ? "ap" : "ar", co = finCo(v.company), bucket = co === "old" ? onAccountOld : onAccount;
-    bucket[side][s(v.party)] = Math.round(((bucket[side][s(v.party)] || 0) + left) * 100) / 100;
-    onAccountDocs.push({ co, side, party: s(v.party), voucherNo: s(v._id), type: s(v.type), date: day(v.date), ref: s(v.ref), narration: s(v.narration).slice(0, 160),
+    bucket[side][party] = Math.round(((bucket[side][party] || 0) + left) * 100) / 100;
+    onAccountDocs.push({ co, side, party, voucherNo: s(v._id), type: s(v.type), date: day(v.date), ref: s(v.ref), narration: s(v.narration).slice(0, 160),
                          amount: Math.round((v.amount || 0) * 100) / 100, allocated: Math.round((v.allocated || 0) * 100) / 100, onAccount: left });
   }
   const dataTo = heads.reduce((mx, h) => { const d = day(h.invoiceDate); return d && d > mx ? d : mx; }, "");
@@ -846,11 +856,12 @@ async function financeDataset() {
       { table, status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } }, { sort: { startedAt: -1 }, projection: { startedAt: 1 } })));
     const times = syncs.map((x) => (x?.startedAt ? new Date(x.startedAt).toISOString() : null));
     const lastSync = times.filter(Boolean).sort().pop() || null;
-    const key = createHash("sha1").update(`${FIN_SNAPSHOT_ID}|${times.join("|")}`).digest("hex");
+    const parties = await loadParties(db);
+    const key = createHash("sha1").update(`${FIN_SNAPSHOT_ID}|${times.join("|")}|${parties.key}`).digest("hex");
     const cache = db.collection("dashboardCache");
     const snap = await cache.findOne({ _id: FIN_SNAPSHOT_ID });
     if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
-    const payload = await buildFinance(db, lastSync);
+    const payload = await buildFinance(db, lastSync, parties);
     const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
     await cache.replaceOne({ _id: FIN_SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
     return payload;
