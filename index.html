@@ -2233,7 +2233,7 @@ function renderPivot() {
   for (const b of basketList) {
     const open = searching || state.basketsOpen.has(b.name), bi = pivotRows.push(b) - 1;
     body += `<tr class="lv0 bk"><td class="dim last" style="${CHARGE_COL}" title="${esc(b.name)}"><button class="tg" data-bk="${esc(b.name)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(b.name)}`
-      + `${open ? "" : ` <span class="dash">· ${b.kids.length} charge${b.kids.length === 1 ? "" : "s"}</span>`}</td>${pivotCols.map((c, ci) => val(c.grand ? b.total : b.cells[c.key], bi, ci)).join("")}</tr>`;
+      + `</td>${pivotCols.map((c, ci) => val(c.grand ? b.total : b.cells[c.key], bi, ci)).join("")}</tr>`;
     if (open) for (const n of b.kids.sort((x, y) => y.total - x.total)) {
       const i = pivotRows.push(n) - 1;
       body += `<tr class="lv1"><td class="dim last" style="${CHARGE_COL};padding-left:38px" title="Show ${esc(n.name)} by shipper, party, POL and POD">`
