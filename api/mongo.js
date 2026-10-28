@@ -164,6 +164,23 @@ const countryKey = (v) => String(v ?? "").replace(/,/g, " ").replace(/\s+/g, " "
 const CATEGORIES = ["Lease", "Detention", "EXIM", "M&R", "Other"];
 const s = (v) => (typeof v === "string" ? v.trim() : "");
 const normCharge = (v) => s(v).toUpperCase();
+// Shipper / customer names typed in all capitals → proper case; names typed in mixed case are left as they are
+const UPPER_WORDS = new Set(["LLC", "LLP", "PLC", "PT", "CV", "USA", "UK", "UAE", "SAR", "RTW", "KPX", "TCI", "ICD", "FZC", "FZE", "FZCO",
+  "DMCC", "AG", "SA", "BV", "NV", "JSC", "II", "III", "IV", "NA", "FCP", "LCT", "SRF", "HP", "KC", "KLB", "SG", "BASF", "COFCO"]);
+const MIXED_WORDS = { GMBH: "GmbH", LTD: "Ltd", PVT: "Pvt", SDN: "Sdn", BHD: "Bhd" };
+const LOWER_WORDS = new Set(["AND", "OF", "THE", "FOR", "DE", "DO", "DA", "DI"]);
+const properName = (v) => {
+  if (!/[A-Z]/.test(v) || /[a-z]/.test(v)) return v;
+  let first = true;
+  return v.replace(/[A-Z0-9]+(?:['’][A-Z]+)*/g, (w) => {
+    const was = first; first = false;
+    if (UPPER_WORDS.has(w) || /\d/.test(w)) return w;
+    if (MIXED_WORDS[w]) return MIXED_WORDS[w];
+    if (!was && LOWER_WORDS.has(w)) return w.toLowerCase();
+    if (w.length <= 3 && !/[AEIOUY]/.test(w)) return w;   // initials such as M/S, KCC
+    return w[0] + w.slice(1).toLowerCase();
+  });
+};
 
 async function buildSales(db, mappings, lastSync, tradelanes = []) {
   const catOf = new Map(mappings.map((m) => [normCharge(m.chargeName), CATEGORIES.includes(m.revenueCategory) ? m.revenueCategory : "Other"]));
@@ -204,7 +221,7 @@ async function buildSales(db, mappings, lastSync, tradelanes = []) {
       basket: basketOf.get(charge) || "(Not mapped)",
       amount: (docType === "Credit Note" ? -1 : 1) * (r.chargeTotalAmountHc ?? 0),  // USD, credit notes negative
       agent: s(r.billingPartyName) || "(Unknown)",
-      shipper: s(r.shipperName),
+      shipper: properName(s(r.shipperName)),
       pol, pod,
       lane: blNo && pol && pod && !SUNDRY.has(r.voucherCode) ? `${pol} → ${pod}` : null,
       ...(() => {   // countryLane = origin → destination country, tradeLane = their trade lanes (regions)
@@ -222,7 +239,7 @@ async function buildSales(db, mappings, lastSync, tradelanes = []) {
 // The Atlas cluster downloads slowly (~100 KB/s), so the built dataset is kept gzipped in
 // `dashboardCache` and rebuilt only after a new tblInvoice sync or a charge-mapping change.
 const TTL_MS = 2 * 60 * 1000;
-const SNAPSHOT_ID = "sales-html-v7";
+const SNAPSHOT_ID = "sales-html-v8";
 
 async function salesDataset() {
   if (g._sarSales && Date.now() - g._sarSales.at < TTL_MS) return g._sarSales.data;
@@ -593,7 +610,7 @@ async function tankStatusDataset() {
 // HBL date, tanks = the BL's live container list. Checked BL by BL against the dump (Feb–Sep 2026).
 
 const DEPLOY_COMPANIES = ["SAR Global PTE Ltd"];
-const DEPLOY_SNAPSHOT_ID = "deploy-v2";
+const DEPLOY_SNAPSHOT_ID = "deploy-v3";
 const unEntity = (v) => s(v).replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim();
 
 async function buildDeploy(db, lastSync) {
@@ -614,7 +631,7 @@ async function buildDeploy(db, lastSync) {
     const date = day(h.hblDate || h.blDate); if (!date) continue;
     if (!DEPLOY_COMPANIES.includes(h.companyName) && !(h.companyName === OLD_COMPANY && OLD_COMPANY_MONTHS.includes(date.slice(0, 7)))) continue;
     const list = byBl.get(h.blId) || [];
-    bls.push({ bl: s(h.hblNo || h.blNo), date, shipper: unEntity(h.shipperName) || "(No shipper)", consignee: unEntity(h.consigneeName),
+    bls.push({ bl: s(h.hblNo || h.blNo), date, shipper: properName(unEntity(h.shipperName)) || "(No shipper)", consignee: unEntity(h.consigneeName),
                plrAgent: unEntity(h.plrAgentName) || "(No PLR agent)", polAgent: unEntity(h.polAgentName), podAgent: unEntity(h.podAgentName),
                plr: s(h.plrName), pol: s(h.polName), pod: s(h.podName), fpd: s(h.fpdName), job: s(h.exportJobNo), cargo: s(h.cargoTypeName),
                commodity: s(h.commodity).slice(0, 120), tanks: list });
@@ -654,7 +671,7 @@ async function deployDataset() {
 //   tblJob          Job No = every job whose rateRequestNo is the quotation (comma separated)
 
 const QUOT_COMPANIES = ["SAR Global PTE Ltd"];   // plus the old company's quotations in OLD_COMPANY_MONTHS (Jan-26), as in Sales / Tank Deployment
-const QUOT_SNAPSHOT_ID = "quotations-v4";
+const QUOT_SNAPSHOT_ID = "quotations-v5";
 // Shipper / customer spellings → one name, from the "Shipper/Customer Mapping" sheet, loaded into partyMappings by
 // sarfd_sync.py. Documents are keyed "shipper|KEY" / "customer|KEY" (keep partyKey in step with party_key() there).
 const partyKey = (v) => unEntity(v).toUpperCase();
@@ -662,7 +679,7 @@ const CARGO_SHORT = { HAZARDOUS: "HAZ", GENERAL: "GEN" };
 
 async function buildQuotations(db, lastSync, parties = []) {
   const nameOf = new Map(parties.map((p) => [p._id, s(p.name)]));
-  const party = (kind, v) => { const n = unEntity(v); return nameOf.get(`${kind}|${partyKey(n)}`) || n; };
+  const party = (kind, v) => { const n = unEntity(v); return properName(nameOf.get(`${kind}|${partyKey(n)}`) || n); };
   const rr = db.collection("tblRateRequest");
   const match = { companyName: { $in: [...QUOT_COMPANIES, OLD_COMPANY] } };
   const [heads, money, qty] = await Promise.all([
