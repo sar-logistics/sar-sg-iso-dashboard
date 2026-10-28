@@ -656,10 +656,6 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 17h20l-2 4H4z"/><rect x="6" y="9" width="12" height="6" rx="3"/><path d="M12 9V5M9 5h6"/></svg>
       Tank Deployment
     </a>
-    <a href="/" data-page="tu">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="8" width="20" height="9" rx="4.5"/><path d="M6 17v2M18 17v2"/><circle cx="12" cy="4.5" r="2.5"/><path d="M12 3.6v.9l.6.5"/></svg>
-      Tank Utilisation
-    </a>
     <a href="/" data-page="fin">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
       Finance
@@ -1635,6 +1631,7 @@ function route(next) {
   if (location.hash || location.pathname !== "/" || location.search) history.replaceState(null, "", "/");
   let page = PAGES[currentPage] ? currentPage : "sales";
   if ((page === "admin" || page === "usage") && !isAdmin()) page = "sales";
+  if (page === "tu") page = currentPage = "sales";   // Tank Utilisation is off the dashboard for now (its logic is being reworked)
   for (const a of document.querySelectorAll(".side nav a:not(.sub)")) {
     if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
