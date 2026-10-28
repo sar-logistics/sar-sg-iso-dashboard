@@ -3346,7 +3346,7 @@ function tuRows() {
   return rows;
 }
 // rows shown under each tank (and in the Grand Total block): k = monthly field, idle % is worked out from the days
-const TU_MEASURES = [["idle", "Idle Days"], ["pct", "Idle %"], ["work", "Working Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Net (USD)"]];
+const TU_MEASURES = [["idle", "Idle Days"], ["pct", "Idle %"], ["work", "Working Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Gross Profit (USD)"]];
 function renderTu() {
   if (!tu.data) return;
   const rows = tuRows(), ms = monthsBetween(tu.from, tu.to), dash = '<span class="dash">—</span>';
@@ -3360,8 +3360,8 @@ function renderTu() {
     + card("Idle Tank-Days", n0(idle), `${fleet ? ((100 * idle) / fleet).toFixed(1) : "0.0"}% of ${n0(fleet)} tank-days in fleet`, "#D98E04")
     + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
     + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
-    + card("Net", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
-  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · idle days by month, most idle first — + for working days, revenue, cost and net; click a tank for its history`;
+    + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · idle days by month, most idle first — + for working days, revenue, cost and gross profit; click a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
   const val = (r, k, mo) => {
@@ -3391,7 +3391,7 @@ function renderTu() {
 
   const u = tu.data.unassigned || {};
   $("tuFoot").textContent = "Idle = empty at a depot (empty available, received from consignee, returned by shipper, cleaning, survey, repair, on hire, sub-lease off hire, depot transfer). "
-    + "Working = allocated to shipper, laden, with consignee, on rail or sub-leased. Repositioning (empty moves to / from port) is in the tank pop-up. Each movement lasts until the tank's next one; Idle % = idle days ÷ days in fleet. "
+    + "Working = allocated to shipper, laden, with consignee, on rail or sub-leased. Repositioning (empty moves to / from port) is in the tank pop-up. Gross Profit = revenue − cost. Each movement lasts until the tank's next one; Idle % = idle days ÷ days in fleet. "
     + "Revenue = principal sales, sub-lease and M&R sales invoices less principal credit notes; cost = container-wise and BL purchase invoices (lease rent, storage, cleaning, repair, freight …), by invoice month, USD. "
     + "A charge goes to a tank from the invoice's own per-tank amounts, else its tank list or BL tanks (exact when priced per tank); * = includes charges split equally across the tanks of an invoice. "
     + `Not on any tank (no tank list in SARFD, all dates): revenue $${tuMoney(u.rev || 0)}, cost $${tuMoney(u.cost || 0)} — mostly lessors' lease rent invoices without tanks. `
@@ -3445,7 +3445,7 @@ function openTank(c) {
     + `<td>${esc(l[4])}</td><td class="mono">${l[7] ? esc(l[7]) : dash}</td><td>${l[6] === "e" ? "Exact" : "Split"}</td><td class="amt mono${l[5] < 0 ? " neg" : ""}">${tuMoney(l[5])}</td></tr>`).join("");
   $("uBody").innerHTML = `<div class="tu-sum">${stat("Days in fleet", n0(fleet))}${stat("Idle days", `${n0(days.idle)} (${fleet ? ((100 * days.idle) / fleet).toFixed(0) : 0}%)`)}`
     + `${stat("Working days", n0(days.working))}${stat("Repositioning days", n0(days.reposition))}${stat("Revenue", "$" + tuMoney(rev))}${stat("Cost", "$" + tuMoney(cost))}`
-    + `${stat("Net", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)))}</div>`
+    + `${stat("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)))}</div>`
     + `<h4>Movements (latest first)</h4><table class="tank-table"><thead><tr><th>From</th><th>To</th><th class="amt">Days</th><th>State</th><th>Activity</th><th>Location</th><th>Agent</th></tr></thead>`
     + `<tbody>${perRows || '<tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8">No movements in these months</td></tr>'}</tbody></table>`
     + `<h4>Revenue and cost (latest first)</h4><table class="tank-table"><thead><tr><th>Invoice Date</th><th>Type</th><th>Voucher</th><th>Invoice No</th><th>Charge</th><th>BL / Job</th><th>Basis</th><th class="amt">Amount (USD)</th></tr></thead>`
