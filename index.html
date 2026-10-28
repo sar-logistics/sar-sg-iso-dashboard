@@ -367,6 +367,28 @@
   /* ---------- tank inventory ---------- */
   #invPage { align-content: start; }
   .kpis.inv-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  /* Tank Utilisation */
+  .kpis.tu-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  @media (max-width: 1200px) { .kpis.tu-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .kpis.tu-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .tu-table th, .tu-table td { text-align: right; white-space: nowrap; }
+  .tu-table th.txt, .tu-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
+  .tu-table td.txt { max-width: 230px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .tu-table th[data-sort] { cursor: pointer; user-select: none; }
+  .tu-table th[data-sort]:hover { color: var(--accent); }
+  .tu-table th .arr { margin-left: 4px; font-size: 9px; }
+  .tu-table td.neg, #uBody td.neg { color: #C24A2E; }
+  .tu-table td.pos { color: #1F8A4C; }
+  .tu-bar { display: inline-block; width: 46px; height: 6px; margin-right: 6px; vertical-align: middle; border-radius: 3px; background: #E3E7F0; overflow: hidden; }
+  .tu-bar i { display: block; height: 100%; background: #D98E04; }
+  .tu-state { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .tu-state.idle { background: #FDF3E1; color: #A86A00; }
+  .tu-state.working { background: #E6F4EC; color: #1F8A4C; }
+  .tu-state.reposition { background: #EAF0FB; color: #2C4E82; }
+  .tu-state.off { background: #F1F2F5; color: #6B7280; }
+  #uBody h4 { margin: 16px 22px 8px; font-size: 12.5px; }
+  #uBody .tu-sum { display: flex; flex-wrap: wrap; gap: 18px; padding: 14px 22px 0; font-size: 12.5px; }
+  #uBody .tu-sum b { display: block; font-size: 16px; }
   /* Quotation Details summary: months across, one row per measure */
   .quo-sum th, .quo-sum td { text-align: right; }
   /* the shipper / customer name, then Grand Total; both stay frozen on the left */
@@ -633,6 +655,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M8 21v-6h8v6M8 12h8"/></svg>
       Current Tank Inventory Status
     </a>
+    <a href="/" data-page="tu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="8" width="20" height="9" rx="4.5"/><path d="M6 17v2M18 17v2"/><circle cx="12" cy="4.5" r="2.5"/><path d="M12 3.6v.9l.6.5"/></svg>
+      Tank Utilisation
+    </a>
     <a href="/" data-page="dep">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 17h20l-2 4H4z"/><rect x="6" y="9" width="12" height="6" rx="3"/><path d="M12 9V5M9 5h6"/></svg>
       Tank Deployment
@@ -699,6 +725,13 @@
     <div class="ph-controls">
       <label class="f">From <select id="quoFrom" aria-label="Quotations from month"></select></label>
       <label class="f">To <select id="quoTo" aria-label="Quotations to month"></select></label>
+    </div>
+  </div>
+  <div class="page-head hidden" id="tuHead">
+    <div class="ph-text"><h2>Tank Utilisation</h2><p class="sub" id="tuSub">Loading…</p></div>
+    <div class="ph-controls">
+      <label class="f">From <select id="tuFrom" aria-label="Tank utilisation from month"></select></label>
+      <label class="f">To <select id="tuTo" aria-label="Tank utilisation to month"></select></label>
     </div>
   </div>
   <div class="page-head hidden" id="finHead">
@@ -1092,6 +1125,22 @@
   </section>
 </main>
 
+<main id="tuPage" class="hidden">
+  <div class="alert hidden" id="tuErr" role="alert"></div>
+  <div class="kpis tu-kpis" id="tuKpis"></div>
+  <section class="card panel">
+    <div class="tools" style="justify-content:space-between">
+      <div><h2>Tank Details</h2><p class="sub" style="margin-bottom:0" id="tuTableSub"></p></div>
+      <div class="tools" style="margin:0">
+        <input class="search" id="tuSearch" placeholder="Search tank, lessor, location…">
+        <button class="btn" id="tuXlsx">Export to Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap" style="max-height:680px"><table class="tu-table" id="tuTable"></table></div>
+    <p class="foot" style="margin:10px 0 0" id="tuFoot"></p>
+  </section>
+</main>
+
 <main id="finPage" class="hidden">
   <div class="alert hidden" id="finErr" role="alert"></div>
   <div class="kpis fin-kpis" id="finKpis"></div>
@@ -1246,6 +1295,19 @@
       </div>
     </div>
     <div class="body"><table id="bTable" class="tank-table"></table></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="tuOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="uTitle">
+    <div class="head">
+      <div><h3 id="uTitle"></h3><div class="foot" id="uSub"></div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn" id="uXlsx">Export to Excel</button>
+        <button class="btn" id="uClose" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="body" id="uBody"></div>
   </div>
 </div>
 
@@ -1566,7 +1628,7 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", tu: "Tank Utilisation", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
 let currentPage = "sales";   // after sign-in Performance (Billing Details) opens first
@@ -1596,7 +1658,9 @@ function route(next) {
   $("finPage").classList.toggle("hidden", page !== "fin");
   $("quoHead").classList.toggle("hidden", page !== "quo");
   $("quoPage").classList.toggle("hidden", page !== "quo");
-  $("refreshBtn").classList.toggle("hidden", !["sales", "mr", "inv", "dep", "fin", "quo"].includes(page));
+  $("tuHead").classList.toggle("hidden", page !== "tu");
+  $("tuPage").classList.toggle("hidden", page !== "tu");
+  $("refreshBtn").classList.toggle("hidden", !["sales", "mr", "inv", "dep", "fin", "quo", "tu"].includes(page));
   syncTopbarH();
   if (page === "admin") loadUsers();
   if (page === "usage") loadUsage();
@@ -1605,6 +1669,7 @@ function route(next) {
   if (page === "dep") { if (dep.data) renderDep(); else loadDep(); }
   if (page === "fin") { if (fin.data) renderFin(); else loadFin(); }
   if (page === "quo") { if (quo.data) renderQuo(); else loadQuo(); }
+  if (page === "tu") { if (tu.data) renderTu(); else loadTu(); }
   closeMenu();
 }
 // The frozen KPI row sits right under the top bar, whose height changes when its controls wrap.
@@ -1695,7 +1760,7 @@ async function loadData(withUser) {
     $("refreshBtn").disabled = false;
   }
 }
-$("refreshBtn").onclick = () => (currentPage === "mr" ? loadMr() : currentPage === "inv" ? loadInv(true) : currentPage === "dep" ? loadDep() : currentPage === "fin" ? loadFin() : currentPage === "quo" ? loadQuo() : loadData(false));
+$("refreshBtn").onclick = () => (currentPage === "mr" ? loadMr() : currentPage === "inv" ? loadInv(true) : currentPage === "dep" ? loadDep() : currentPage === "fin" ? loadFin() : currentPage === "quo" ? loadQuo() : currentPage === "tu" ? loadTu() : loadData(false));
 
 // ============================================================ filter bar
 $("views").innerHTML = VIEWS.map(([v, l]) => `<option value="${v}">${l === "Custom Range" ? "Custom View" : `${l} View`}</option>`).join("");
@@ -2386,7 +2451,7 @@ $("mClose").onclick = closeDrill;
 $("overlay").onclick = (e) => { if (e.target === $("overlay")) closeDrill(); };
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (fin.drill) closeFinDocs(); else if (quo.drill) closeQuotes(); else if (dep.drill) closeBls(); else if (mr.drill) closeTanks(); else if (state.drill) closeDrill(); else if (sum.charge) closeChargeBreakdown();
+  if (fin.drill) closeFinDocs(); else if (tu.drill) closeTank(); else if (quo.drill) closeQuotes(); else if (dep.drill) closeBls(); else if (mr.drill) closeTanks(); else if (state.drill) closeDrill(); else if (sum.charge) closeChargeBreakdown();
   else for (const id of ["userModal", "importModal"]) closeModal(id);
 });
 $("mCsv").onclick = () => {
@@ -3198,6 +3263,194 @@ $("quoXlsx").onclick = () => {
   const d = (v) => (v ? new Date(v + "T00:00") : "");
   const rows = quoRows().map((x, i) => Object.fromEntries([["Sr No", i + 1], ...QUO_COLS.map((c) => [c.h, c.k === "date" ? d(c.g(x)) : c.g(x) ?? ""])]));
   writeXlsx(`SAR_Quotation_Details_${quo.from}_to_${quo.to}.xlsx`, [["Quotation Details", rows, [7, 22, 13, 13, 24, 10, 10, 10, 10, 36, 20, 36, 36, 13, 18, 18, 18, 18, 9, 40, 9, 14, 10, 10, 8, 12, 9, 11, 11, 11, 18], 2]]);
+};
+
+// ============================================================ Tank Utilisation
+// Per tank, for the chosen months: days idle / working / repositioning (from its movement history) and the revenue
+// and cost billed to it. Built by the API only from SARFD (tblContainerMovement, tblContainerTransaction, tblInvoice,
+// tblBL) — see buildTankStatus in api/mongo.js for how each invoice charge is put on tanks.
+const tu = { data: null, from: "2026-01", to: "", q: "", sort: { k: "idle", dir: -1 }, drill: null, rows: [] };
+const TU_FIRST = "2025-03";   // first month with invoices of both SAR companies
+const TU_STATE = { idle: "Idle", working: "Working", reposition: "Repositioning", off: "Off hire" };
+const TU_VOUCHER = { PSI: "Principal Sales Invoice", SLI: "Sub Lease Invoice", MRI: "M&R Sales Invoice", CN: "Principal Credit Note",
+                     PICI: "Purchase Invoice Container Wise", PI: "Purchase Invoice" };
+const tuMoney = (v) => (Math.round(v) < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("en-US");
+const dayMs = 86400000, dayNo = (d) => Math.floor(Date.parse(d + "T00:00:00Z") / dayMs);
+const tuMonthEnd = (m) => { const [y, mo] = m.split("-").map(Number); return iso(new Date(Date.UTC(y, mo, 0))); };
+
+// The API sends repeated text as indexes into data.words (to stay under the response size limit): expand it back to
+// moves [date, activity, state, location, agent] and lines [date, "rev" | "cost", voucher, invoice no, charge, amount, "e" | "s", BL / job].
+function tuExpand(data) {
+  const w = data.words || [], ST = { i: "idle", w: "working", r: "reposition", o: "off" };
+  for (const t of data.tanks || []) {
+    t.moves = t.moves.map(([d, a, st, loc, ag]) => [d, w[a], ST[st], w[loc], w[ag]]);
+    t.lines = t.lines.map(([d, k, v, no, ch, amt, how, ref]) => [d, k ? "rev" : "cost", v, no, w[ch], amt, how ? "e" : "s", w[ref]]);
+  }
+  return data;
+}
+async function loadTu() {
+  $("tuErr").classList.add("hidden");
+  if (!tu.data) { $("tuKpis").innerHTML = '<div class="skel"></div>'.repeat(5); $("tuSub").textContent = "Loading tank history…"; }
+  try {
+    tu.data = tuExpand(await api("/api/mongo", { dataset: "tanks" }));
+    const months = monthsBetween(TU_FIRST, thisMonth());
+    if (!months.includes(tu.from)) tu.from = months[0];
+    if (!tu.to || !months.includes(tu.to)) tu.to = thisMonth();
+    const opts = (sel) => months.map((m) => `<option value="${m}"${m === sel ? " selected" : ""}>${monthLabel(m)}</option>`).join("");
+    $("tuFrom").innerHTML = opts(tu.from); $("tuTo").innerHTML = opts(tu.to);
+    renderTu();
+  } catch (e) {
+    $("tuErr").textContent = "Could not load tank utilisation: " + e.message; $("tuErr").classList.remove("hidden");
+    if (!tu.data) $("tuKpis").innerHTML = "";
+  }
+}
+$("tuFrom").onchange = (e) => { tu.from = e.target.value; if (tu.to < tu.from) { tu.to = tu.from; $("tuTo").value = tu.to; } renderTu(); };
+$("tuTo").onchange = (e) => { tu.to = e.target.value; if (tu.from > tu.to) { tu.from = tu.to; $("tuFrom").value = tu.from; } renderTu(); };
+$("tuSearch").oninput = (e) => { tu.q = e.target.value; renderTu(); };
+
+// The tank's movement history as periods: each movement lasts until the next one (the latest until today),
+// cut to the chosen months. State of a period = state of the activity that starts it.
+function tuPeriods(t) {
+  const lo = dayNo(`${tu.from}-01`), hi = Math.min(dayNo(tuMonthEnd(tu.to)), dayNo(todayIso())) + 1, out = [];
+  t.moves.forEach((m, i) => {
+    const a = dayNo(m[0]), b = i + 1 < t.moves.length ? dayNo(t.moves[i + 1][0]) : dayNo(todayIso()) + 1;
+    const from = Math.max(a, lo), to = Math.min(b, hi);
+    if (to > from) out.push({ from: iso(new Date(from * dayMs)), to: iso(new Date((to - 1) * dayMs)), days: to - from, activity: m[1], state: m[2], loc: m[3], agent: m[4] });
+  });
+  return out;
+}
+function tuRows() {
+  const fromD = `${tu.from}-01`, toD = tuMonthEnd(tu.to), q = tu.q.trim().toLowerCase(), rows = [];
+  for (const t of tu.data?.tanks || []) {
+    const per = tuPeriods(t), days = { idle: 0, working: 0, reposition: 0, off: 0 };
+    for (const p of per) days[p.state] += p.days;
+    const lines = t.lines.filter((l) => l[0] >= fromD && l[0] <= toD);
+    const fleet = days.idle + days.working + days.reposition;
+    if (!fleet && !lines.length) continue;
+    const last = t.moves[t.moves.length - 1] || [];
+    const rev = lines.reduce((a, l) => a + (l[1] === "rev" ? l[5] : 0), 0), cost = lines.reduce((a, l) => a + (l[1] === "cost" ? l[5] : 0), 0);
+    const r = { t, c: t.c, size: t.size, lessor: t.lease?.lessor || "", rate: t.lease?.rate ?? null, status: last[1] || "", state: last[2] || "",
+      loc: last[3] || "", since: last[0] || "", fleet, idle: days.idle, work: days.working, repo: days.reposition,
+      idlePct: fleet ? (100 * days.idle) / fleet : 0, rev, cost, net: rev - cost, split: lines.some((l) => l[6] === "s") };
+    if (q && ![r.c, r.lessor, r.status, r.loc].some((v) => v.toLowerCase().includes(q))) continue;
+    rows.push(r);
+  }
+  const { k, dir } = tu.sort;
+  rows.sort((a, b) => (typeof a[k] === "string" ? a[k].localeCompare(b[k]) : a[k] - b[k]) * dir || a.c.localeCompare(b.c));
+  return rows;
+}
+const TU_COLS = [   // k = row field, h = heading, f = cell text; txt = left-aligned text
+  { k: "c", h: "Tank No", txt: true },
+  { k: "size", h: "Size", txt: true },
+  { k: "lessor", h: "Lessor", txt: true },
+  { k: "rate", h: "Lease Rate / Day" },
+  { k: "status", h: "Current Status", txt: true },
+  { k: "loc", h: "Current Location", txt: true },
+  { k: "fleet", h: "Days in Fleet" },
+  { k: "idle", h: "Idle Days" },
+  { k: "idlePct", h: "Idle %" },
+  { k: "work", h: "Working Days" },
+  { k: "repo", h: "Repositioning Days" },
+  { k: "rev", h: "Revenue (USD)" },
+  { k: "cost", h: "Cost (USD)" },
+  { k: "net", h: "Net (USD)" },
+];
+function renderTu() {
+  if (!tu.data) return;
+  const rows = tuRows(), dash = '<span class="dash">—</span>';
+  tu.rows = rows;
+  $("tuSub").textContent = "";
+  const sum = (k) => rows.reduce((a, r) => a + r[k], 0);
+  const fleet = sum("fleet"), idle = sum("idle"), rev = sum("rev"), cost = sum("cost"), idleNow = rows.filter((r) => r.state === "idle").length;
+  const card = (lbl, val, note, color) => `<div class="kpi" style="border-top-color:${color};cursor:default"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="note muted">${note}</div></div>`;
+  const range = `${monthLabel(tu.from)} – ${monthLabel(tu.to)}`;
+  $("tuKpis").innerHTML = card("Tanks", n0(rows.length), `${n0(idleNow)} idle right now`, "#1E3A8A")
+    + card("Idle Tank-Days", n0(idle), `${fleet ? ((100 * idle) / fleet).toFixed(1) : "0.0"}% of ${n0(fleet)} tank-days in fleet`, "#D98E04")
+    + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
+    + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
+    + card("Net", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · click a tank for its movements, revenue and cost`;
+  const cell = (c, r) => {
+    const v = r[c.k];
+    if (c.k === "c") return `<td class="txt"><button class="num" data-c="${esc(v)}">${esc(v)}</button></td>`;
+    if (c.k === "status") return `<td class="txt" title="${esc(v)} since ${r.since ? shortDate(r.since) : "—"}">${v ? `<span class="tu-state ${r.state}">${esc(v)}</span>` : dash}</td>`;
+    if (c.txt) return `<td class="txt" title="${esc(v)}">${v ? esc(v) : dash}</td>`;
+    if (c.k === "rate") return `<td>${v == null ? dash : v.toLocaleString("en-US", { maximumFractionDigits: 2 })}</td>`;
+    if (c.k === "idlePct") return `<td><span class="tu-bar"><i style="width:${Math.min(100, v).toFixed(0)}%"></i></span>${r.fleet ? v.toFixed(0) + "%" : "–"}</td>`;
+    if (["rev", "cost", "net"].includes(c.k)) return `<td class="${c.k === "net" ? (v < 0 ? "neg" : v > 0 ? "pos" : "") : ""}">${Math.round(v) ? tuMoney(v) : dash}${c.k === "rev" && r.split ? " *" : ""}</td>`;
+    return `<td>${v ? n0(v) : dash}</td>`;
+  };
+  const arr = (k) => (tu.sort.k === k ? `<span class="arr">${tu.sort.dir < 0 ? "▼" : "▲"}</span>` : "");
+  const tot = { fleet, idle, work: sum("work"), repo: sum("repo"), rev, cost, net: rev - cost };
+  $("tuTable").innerHTML = `<thead><tr>${TU_COLS.map((c) => `<th class="${c.txt ? "txt" : ""}" data-sort="${c.k}">${esc(c.h)}${arr(c.k)}</th>`).join("")}</tr></thead><tbody>`
+    + (rows.slice(0, 2000).map((r) => `<tr>${TU_COLS.map((c) => cell(c, r)).join("")}</tr>`).join("")
+      || `<tr><td colspan="${TU_COLS.length}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`)
+    + `</tbody><tfoot><tr>${TU_COLS.map((c) => c.k === "c" ? "<td>Grand Total</td>" : c.k === "idlePct" ? `<td>${fleet ? ((100 * idle) / fleet).toFixed(0) + "%" : ""}</td>`
+        : c.k in tot ? `<td>${["rev", "cost", "net"].includes(c.k) ? tuMoney(tot[c.k]) : n0(tot[c.k])}</td>` : "<td></td>").join("")}</tr></tfoot>`;
+  const u = tu.data.unassigned || {};
+  $("tuFoot").textContent = "Idle = empty at a depot (empty available, received from consignee, returned by shipper, cleaning, survey, repair, on hire, sub-lease off hire, depot transfer). "
+    + "Working = allocated to shipper, laden, with consignee, on rail or sub-leased. Repositioning = empty moves to / from port. Each movement lasts until the tank's next one. "
+    + "Revenue = principal sales, sub-lease and M&R sales invoices less principal credit notes; cost = container-wise and BL purchase invoices (lease rent, storage, cleaning, repair, freight …), by invoice date, USD. "
+    + "A charge goes to a tank from the invoice's own per-tank amounts, else its tank list or BL tanks (exact when priced per tank); * = includes charges split equally across the tanks of an invoice. "
+    + `Not on any tank (no tank list in SARFD, all dates): revenue $${tuMoney(u.rev || 0)}, cost $${tuMoney(u.cost || 0)} — mostly lessors' lease rent invoices without tanks. `
+    + `Source: SARFD tblContainerMovement, tblContainerTransaction, tblInvoice, tblBL.`
+    + (tu.data.lastSync ? ` Last sync ${new Date(tu.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.` : "");
+}
+$("tuTable").onclick = (e) => {
+  const th = e.target.closest("th[data-sort]");
+  if (th) { const k = th.dataset.sort; tu.sort = { k, dir: tu.sort.k === k ? -tu.sort.dir : TU_COLS.find((c) => c.k === k).txt ? 1 : -1 }; return renderTu(); }
+  const b = e.target.closest("button.num[data-c]"); if (b) openTank(b.dataset.c);
+};
+$("tuXlsx").onclick = () => {
+  if (!tu.data) return;
+  const rows = tu.rows.map((r) => ({ "Tank No": r.c, Size: r.size, Lessor: r.lessor, "Lease Rate / Day": r.rate ?? "", "Current Status": r.status,
+    "Status Since": r.since ? new Date(r.since + "T00:00") : "", "Current Location": r.loc, "Days in Fleet": r.fleet, "Idle Days": r.idle,
+    "Idle %": r.fleet ? Math.round(r.idlePct * 10) / 10 : "", "Working Days": r.work, "Repositioning Days": r.repo,
+    "Revenue (USD)": Math.round(r.rev * 100) / 100, "Cost (USD)": Math.round(r.cost * 100) / 100, "Net (USD)": Math.round(r.net * 100) / 100,
+    "Includes split charges": r.split ? "Yes" : "" }));
+  writeXlsx(`SAR_Tank_Utilisation_${tu.from}_to_${tu.to}.xlsx`, [["Tank Utilisation", rows, [14, 6, 28, 10, 30, 12, 28, 10, 9, 8, 10, 12, 13, 12, 12, 10], 5]]);
+};
+
+// ---- one tank: summary, movement periods and the revenue / cost lines in the chosen months
+function tankDetail(c) {
+  const t = (tu.data?.tanks || []).find((x) => x.c === c); if (!t) return null;
+  const fromD = `${tu.from}-01`, toD = tuMonthEnd(tu.to);
+  return { t, per: tuPeriods(t).reverse(), lines: t.lines.filter((l) => l[0] >= fromD && l[0] <= toD).slice().reverse() };
+}
+function openTank(c) {
+  const d = tankDetail(c); if (!d) return;
+  tu.drill = c;
+  const { t, per, lines } = d, dash = '<span class="dash">—</span>';
+  const days = { idle: 0, working: 0, reposition: 0 }; for (const p of per) if (p.state in days) days[p.state] += p.days;
+  const rev = lines.reduce((a, l) => a + (l[1] === "rev" ? l[5] : 0), 0), cost = lines.reduce((a, l) => a + (l[1] === "cost" ? l[5] : 0), 0);
+  const fleet = days.idle + days.working + days.reposition;
+  $("uTitle").textContent = `Tank ${t.c} › ${monthLabel(tu.from)} – ${monthLabel(tu.to)}`;
+  $("uSub").textContent = [t.size && `${t.size}' ${t.type}`, t.lease?.lessor && `Lessor ${t.lease.lessor}`, t.lease?.rate != null && `$${t.lease.rate}/day`,
+    t.lease?.on && `on hire ${shortDate(t.lease.on)}`, t.lease?.off && `off hire ${shortDate(t.lease.off)}`].filter(Boolean).join(" · ");
+  const stat = (l, v) => `<div>${l}<b>${v}</b></div>`;
+  const perRows = per.map((p) => `<tr><td>${shortDate(p.from)}</td><td>${shortDate(p.to)}</td><td class="amt mono">${n0(p.days)}</td><td><span class="tu-state ${p.state}">${TU_STATE[p.state]}</span></td>`
+    + `<td>${esc(p.activity)}</td><td>${p.loc ? esc(p.loc) : dash}</td><td>${p.agent ? esc(p.agent) : dash}</td></tr>`).join("");
+  const lineRows = lines.map((l) => `<tr><td>${shortDate(l[0])}</td><td>${l[1] === "rev" ? "Revenue" : "Cost"}</td><td>${esc(TU_VOUCHER[l[2]] || l[2])}</td><td class="mono">${esc(l[3])}</td>`
+    + `<td>${esc(l[4])}</td><td class="mono">${l[7] ? esc(l[7]) : dash}</td><td>${l[6] === "e" ? "Exact" : "Split"}</td><td class="amt mono${l[5] < 0 ? " neg" : ""}">${tuMoney(l[5])}</td></tr>`).join("");
+  $("uBody").innerHTML = `<div class="tu-sum">${stat("Days in fleet", n0(fleet))}${stat("Idle days", `${n0(days.idle)} (${fleet ? ((100 * days.idle) / fleet).toFixed(0) : 0}%)`)}`
+    + `${stat("Working days", n0(days.working))}${stat("Repositioning days", n0(days.reposition))}${stat("Revenue", "$" + tuMoney(rev))}${stat("Cost", "$" + tuMoney(cost))}`
+    + `${stat("Net", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)))}</div>`
+    + `<h4>Movements (latest first)</h4><table class="tank-table"><thead><tr><th>From</th><th>To</th><th class="amt">Days</th><th>State</th><th>Activity</th><th>Location</th><th>Agent</th></tr></thead>`
+    + `<tbody>${perRows || '<tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8">No movements in these months</td></tr>'}</tbody></table>`
+    + `<h4>Revenue and cost (latest first)</h4><table class="tank-table"><thead><tr><th>Invoice Date</th><th>Type</th><th>Voucher</th><th>Invoice No</th><th>Charge</th><th>BL / Job</th><th>Basis</th><th class="amt">Amount (USD)</th></tr></thead>`
+    + `<tbody>${lineRows || '<tr><td colspan="8" style="text-align:center;padding:20px;color:#94a3b8">No invoices on this tank in these months</td></tr>'}</tbody></table>`;
+  $("tuOverlay").classList.remove("hidden");
+}
+function closeTank() { $("tuOverlay").classList.add("hidden"); tu.drill = null; }
+$("uClose").onclick = closeTank;
+$("tuOverlay").onclick = (e) => { if (e.target === $("tuOverlay")) closeTank(); };
+$("uXlsx").onclick = () => {
+  const d = tankDetail(tu.drill); if (!d) return;
+  const dt = (v) => (v ? new Date(v + "T00:00") : "");
+  const moves = d.per.map((p) => ({ From: dt(p.from), To: dt(p.to), Days: p.days, State: TU_STATE[p.state], Activity: p.activity, Location: p.loc, Agent: p.agent }));
+  const money = d.lines.map((l) => ({ "Invoice Date": dt(l[0]), Type: l[1] === "rev" ? "Revenue" : "Cost", Voucher: TU_VOUCHER[l[2]] || l[2], "Invoice No": l[3],
+    Charge: l[4], "BL / Job": l[7], Basis: l[6] === "e" ? "Exact" : "Split", "Amount (USD)": l[5] }));
+  writeXlsx(`SAR_Tank_${d.t.c}_${tu.from}_to_${tu.to}.xlsx`, [["Movements", moves, [12, 12, 7, 14, 32, 30, 34], 0], ["Revenue and Cost", money, [12, 9, 30, 20, 36, 22, 7, 13], 0]]);
 };
 
 // ============================================================ Finance

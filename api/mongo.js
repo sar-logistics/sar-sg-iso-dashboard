@@ -430,6 +430,162 @@ async function mrDataset() {
   return data;
 }
 
+// ---------------------------------------------------------------- Tank Utilisation dataset
+//
+// Per tank: its movement history (idle / working days) and the revenue and cost billed to it, only from SARFD:
+//   movements     tblContainerMovement (rows with a deletedNo left out), each activity given a state:
+//                 idle = empty at a depot (available, back from consignee, cleaning, survey, repair, on hire …),
+//                 reposition = empty on the move, working = allocated / laden / with consignee / sub-leased, off = OFF HIRE
+//   lease         tblContainerTransaction On Hire / Off Hire rows: lessor, daily rate, pick-up date
+//   revenue       tblInvoice Principal Sales, Sub Lease, M&R Sales invoices; Principal Credit Notes negative
+//   cost          tblInvoice Purchase Invoice Container Wise (lease rent, storage, cleaning, repair, lift on/off …)
+//                 and Purchase Invoices (freight, transport, handling). M&R work orders (tblContainerRepair) are
+//                 billed through the container-wise purchase invoices, so they are not added again.
+// Each charge of an invoice is put on tanks this way:
+//   1. the invoice's container rows (recordType D) carry amounts that add up to the charge → each tank its own amount
+//   2. else the tanks come from those container rows, else the invoice's own tank list (containerNos), else the BL
+//      (tblBL container list): one tank, or a quantity
+//      equal to the number of tanks (per-tank rate), is exact; anything else is split equally and marked "split"
+//   3. no container rows and no BL tanks → unassigned (counted in the totals, not on any tank)
+// Amounts are chargeTotalAmountHc / detailAmountHc (USD). Both SAR companies, every date (from Mar 2025).
+const TANK_SNAPSHOT_ID = "tank-utilisation-v1";
+const TANK_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblInvoice", "tblBL"];
+const TANK_VOUCHERS = { PSI: "rev", SLI: "rev", MRI: "rev", CN: "rev", PICI: "cost", PI: "cost" };
+const TANK_STATE = {
+  idle: ["EMPTY AVAILABLE", "EMPTY RECEIVED FROM CONSIGNEE", "EMPTY RETURN BY SHIPPER", "DEPOT EMPTY IN", "PORT TO DEPOT EMPTY",
+         "WASHING/ UNDER CLEANING", "SURVEY", "UNDER REPAIR", "ON HIRE", "SUB LEASE OFF HIRE", "INTERNAL TERMINAL/ICD/DEPOT TRANSFER"],
+  reposition: ["LOADED EMPTY", "GATE IN PORT EMPTY", "IMPORT DISCHARGE EMPTY", "DEPOT TO PORT EMPTY"],
+  off: ["OFF HIRE"],
+};
+const tankState = (activity) => {
+  const a = s(activity).toUpperCase();
+  for (const [st, list] of Object.entries(TANK_STATE)) if (list.includes(a)) return st;
+  return "working";   // allocated to shipper, out to shipper, laden moves, sent to consignee, rail, sub lease on hire …
+};
+const TANK_RE = /[A-Z]{4}\d{7}/g;
+
+async function buildTankStatus(db, lastSync) {
+  const [moves, txns, inv, bls] = await Promise.all([
+    db.collection("tblContainerMovement").find({ deletedNo: { $exists: false } }, { projection: { _id: 0, containerNo: 1, containerMovementId: 1,
+      activityDate: 1, activityName: 1, toLocationName: 1, agentName: 1, sizeName: 1, typeName: 1 } }).toArray(),
+    db.collection("tblContainerTransaction").find({ pageTypeName: { $in: ["On Hire", "Off Hire"] } }, { projection: { _id: 0,
+      detailContainerNo: 1, pageTypeName: 1, partyName: 1, detailRate: 1, detailPickUpDate: 1, containerTransactionDate: 1 } }).toArray(),
+    db.collection("tblInvoice").find({ recordType: { $in: ["H", "C", "D"] }, voucherCode: { $in: Object.keys(TANK_VOUCHERS) }, invoiceNo: { $not: /^PRO/i } },
+      { projection: { _id: 0, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, recordType: 1, chargeName: 1, chargeQuantity: 1,
+        chargeTotalAmountHc: 1, detailContainerNo: 1, detailAmountHc: 1, containerNos: 1, blNo: 1, jobNo: 1 } }).toArray(),
+    db.collection("tblBL").find({ recordType: "D", container_containerNo: { $nin: [null, ""] } }, { projection: { _id: 0, blNo: 1, container_containerNo: 1 } }).toArray(),
+  ]);
+  const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const tanks = new Map();   // tank no -> { c, size, type, moves: [[date, activity, state, location, agent]], lease, lines: [] }
+  const tank = (c) => { let t = tanks.get(c); if (!t) tanks.set(c, t = { c, size: "", type: "", moves: [], lease: null, lines: [] }); return t; };
+
+  // movement history, oldest first
+  moves.sort((a, b) => (+new Date(a.activityDate || 0) - +new Date(b.activityDate || 0)) || ((a.containerMovementId || 0) - (b.containerMovementId || 0)));
+  for (const m of moves) {
+    const c = s(m.containerNo).toUpperCase(), d = day(m.activityDate); if (!c || !d) continue;
+    const t = tank(c);
+    t.size = s(m.sizeName) || t.size; t.type = s(m.typeName) || t.type;
+    t.moves.push([d, s(m.activityName), tankState(m.activityName), s(m.toLocationName), s(m.agentName)]);
+  }
+  // lease: the latest On Hire (lessor, daily rate, pick-up) and any Off Hire after it
+  for (const x of txns) {
+    const c = s(x.detailContainerNo).toUpperCase(); if (!c || !tanks.has(c)) continue;
+    const t = tanks.get(c), d = day(x.detailPickUpDate || x.containerTransactionDate);
+    if (x.pageTypeName === "On Hire" && (!t.lease || (d || "") >= (t.lease.on || ""))) t.lease = { lessor: s(x.partyName), rate: x.detailRate ?? null, on: d, off: null };
+  }
+  for (const x of txns) {
+    const c = s(x.detailContainerNo).toUpperCase(), t = tanks.get(c), d = day(x.detailPickUpDate || x.containerTransactionDate);
+    if (x.pageTypeName === "Off Hire" && t?.lease && d && d >= (t.lease.on || "")) t.lease.off = d;
+  }
+
+  // tanks on each BL
+  const blTanks = new Map();
+  for (const b of bls) {
+    const k = s(b.blNo).toUpperCase(); if (!k) continue;
+    const set = blTanks.get(k) || new Set();
+    for (const c of String(b.container_containerNo).toUpperCase().match(TANK_RE) || []) set.add(c);
+    blTanks.set(k, set);
+  }
+
+  // invoices: charge rows (C) and container rows (D), grouped by invoice and charge
+  const byInv = new Map();
+  for (const r of inv) {
+    const k = r.invoiceId ?? r.invoiceNo; let e = byInv.get(k);
+    if (!e) byInv.set(k, e = { no: s(r.invoiceNo), date: day(r.invoiceDate), v: r.voucherCode, bl: "", job: "", cn: new Set(), c: new Map(), d: [] });
+    if (!e.date) e.date = day(r.invoiceDate);
+    if (s(r.blNo)) e.bl = s(r.blNo); if (r.jobNo != null && String(r.jobNo).trim()) e.job = String(r.jobNo).trim();
+    for (const c of String(r.containerNos ?? "").toUpperCase().match(TANK_RE) || []) e.cn.add(c);   // the invoice's tank list
+    if (r.recordType === "H") continue;
+    const ch = normCharge(r.chargeName) || "(NO CHARGE NAME)";
+    if (r.recordType === "C") { const x = e.c.get(ch) || { amt: 0, qty: 0 }; x.amt += r.chargeTotalAmountHc ?? 0; x.qty += r.chargeQuantity ?? 0; e.c.set(ch, x); }
+    else { const c = s(r.detailContainerNo).toUpperCase(); if (c) e.d.push({ ch, c, amt: r.detailAmountHc }); }
+  }
+  const unassigned = { rev: 0, cost: 0, lines: 0 }, unBy = new Map();   // unBy: "voucher|charge" -> amount
+  let exact = 0, split = 0;
+  for (const e of byInv.values()) {
+    if (!e.date) continue;
+    const kind = TANK_VOUCHERS[e.v], sign = e.v === "CN" ? -1 : 1, ref = e.bl || e.job;
+    const put = (c, ch, amt, how) => { tank(c).lines.push([e.date, kind, e.v, e.no, ch, r2(sign * amt), how, ref]); how === "e" ? exact++ : split++; };
+    // charges with container rows but no charge row (container-wise invoices) count from the container rows
+    const charges = new Map(e.c);
+    for (const d of e.d) if (!charges.has(d.ch)) charges.set(d.ch, { amt: null, qty: 0 });
+    for (const [ch, x] of charges) {
+      const dRows = e.d.filter((d) => d.ch === ch);
+      const dSum = dRows.reduce((a, d) => a + (d.amt ?? 0), 0);
+      if (dRows.length && dRows.every((d) => d.amt != null) && (x.amt == null || Math.abs(dSum - x.amt) < 0.05)) {
+        for (const d of dRows) put(d.c, ch, d.amt, "e");
+        continue;
+      }
+      const amt = x.amt ?? dSum; if (!amt) continue;
+      const list = [...new Set((dRows.length ? dRows : e.d).map((d) => d.c))];
+      const ts = list.length ? list : e.cn.size ? [...e.cn] : [...(blTanks.get(e.bl.toUpperCase()) || [])];
+      if (!ts.length) { unassigned[kind] += sign * amt; unassigned.lines++; unBy.set(`${e.v}|${ch}`, (unBy.get(`${e.v}|${ch}`) || 0) + sign * amt); continue; }
+      const how = ts.length === 1 || x.qty === ts.length ? "e" : "s";
+      for (const c of ts) put(c, ch, amt / ts.length, how);
+    }
+  }
+  const out = [...tanks.values()].filter((t) => t.moves.length || t.lines.length);
+  for (const t of out) t.lines.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  // Repeated text (activity, location, agent, charge, BL / job) goes into one word list and rows carry its index,
+  // so the response stays under Vercel's 4.5 MB limit; the page expands it back (tuExpand in index.html).
+  const words = [], wordIx = new Map();
+  const w = (v) => { let i = wordIx.get(v); if (i === undefined) { i = words.length; words.push(v); wordIx.set(v, i); } return i; };
+  for (const t of out) {
+    t.moves = t.moves.map(([d, a, st, loc, ag]) => [d, w(a), st[0], w(loc), w(ag)]);   // state: i(dle) w(orking) r(eposition) o(ff)
+    t.lines = t.lines.map(([d, k, v, no, ch, amt, how, ref]) => [d, k === "rev" ? 1 : 0, v, no, w(ch), amt, how === "e" ? 1 : 0, w(ref)]);
+  }
+  const top = [...unBy].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 15).map(([k, v]) => [...k.split("|"), r2(v)]);
+  return { words, tanks: out, unassigned: { rev: r2(unassigned.rev), cost: r2(unassigned.cost), lines: unassigned.lines, top },
+           assigned: { exact, split }, lastSync, generatedAt: new Date().toISOString() };
+}
+
+async function tankStatusDataset() {
+  if (g._sarTanks && Date.now() - g._sarTanks.at < TTL_MS) return g._sarTanks.data;
+  const data = (async () => {
+    const db = await getDb();
+    const syncs = await Promise.all(TANK_SYNC_TABLES.map((table) =>
+      db.collection("sarfdSyncHistory").findOne(
+        { table, status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } },
+        { sort: { startedAt: -1 }, projection: { startedAt: 1 } })));
+    const times = syncs.map((x) => (x?.startedAt ? new Date(x.startedAt).toISOString() : null));
+    const lastSync = times.filter(Boolean).sort().pop() || null;
+    const key = createHash("sha1").update(`${TANK_SNAPSHOT_ID}|${times.join("|")}`).digest("hex");
+
+    const cache = db.collection("dashboardCache");
+    const snap = await cache.findOne({ _id: TANK_SNAPSHOT_ID });
+    if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
+
+    const payload = await buildTankStatus(db, lastSync);
+    const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
+    await cache.replaceOne({ _id: TANK_SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
+    return payload;
+  })();
+  g._sarTanks = { at: Date.now(), data };
+  data.catch(() => { g._sarTanks = undefined; });
+  return data;
+}
+
 // ---------------------------------------------------------------- Tank Deployment dataset
 // One row per export BL (tblBL, header rows "H") with its tanks (detail rows "D", container_containerNo).
 // Same rules as the Syscon "BL Register - Dump" pivot it replaces: SAR Global PTE Ltd BLs (plus the old company's
@@ -885,6 +1041,7 @@ export async function runRequest(body, user) {
   if (body.dataset === "mr") return mrDataset();
   if (body.dataset === "deploy") return deployDataset();
   if (body.dataset === "quotations") return quotationsDataset();
+  if (body.dataset === "tanks") return tankStatusDataset();
   if (body.dataset === "finance") return financeDataset();
   if (body.dataset === "financeRemarks") return financeRemarks();
   if (body.action === "saveFinanceRemark") return saveFinanceRemark(body, user);
