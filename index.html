@@ -3308,8 +3308,8 @@ $("tuSearch").oninput = (e) => { tu.q = e.target.value; renderTu(); };
 
 // The tank's movement history as periods: each movement lasts until the next one (the latest until today),
 // cut to the chosen months. State of a period = state of the activity that starts it.
-function tuPeriods(t) {
-  const lo = dayNo(`${tu.from}-01`), hi = Math.min(dayNo(tuMonthEnd(tu.to)), dayNo(todayIso())) + 1, out = [];
+function tuPeriods(t, fromM = tu.from, toM = tu.to) {
+  const lo = dayNo(`${fromM}-01`), hi = Math.min(dayNo(tuMonthEnd(toM)), dayNo(todayIso())) + 1, out = [];
   t.moves.forEach((m, i) => {
     const a = dayNo(m[0]), b = i + 1 < t.moves.length ? dayNo(t.moves[i + 1][0]) : dayNo(todayIso()) + 1;
     const from = Math.max(a, lo), to = Math.min(b, hi);
@@ -3361,7 +3361,7 @@ function renderTu() {
     + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
     + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
     + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
-  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · idle days by month, most idle first — + for working days, revenue, cost and gross profit; click a tank for its history`;
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · idle days by month, most idle first — + for working days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
   const val = (r, k, mo) => {
@@ -3373,7 +3373,9 @@ function renderTu() {
   const fmt = (k, v) => (v == null || (k !== "pct" && !Math.round(v)) ? dash
     : k === "pct" ? v.toFixed(0) + "%" : ["rev", "cost", "net"].includes(k) ? tuMoney(v) : n0(v));
   const cls = (k, v) => (k === "net" && v ? (v < 0 ? ' class="neg"' : ' class="pos"') : "");
-  const cells = (r, k) => [`<td class="gt"${cls(k, val(r, k, ""))}>${fmt(k, val(r, k, ""))}</td>`, ms.map((mo) => `<td${cls(k, val(r, k, mo))}>${fmt(k, val(r, k, mo))}</td>`).join("")];
+  // every number opens its detail (movement periods or invoice lines): data-c = tank ("" = all tanks), data-m = month ("" = all months)
+  const btn = (r, k, mo) => { const v = val(r, k, mo), t = fmt(k, v); return t === dash ? t : `<button class="num" data-c="${esc(r.c || "")}" data-k="${k}" data-m="${mo}">${t}</button>`; };
+  const cells = (r, k) => [`<td class="gt"${cls(k, val(r, k, ""))}>${btn(r, k, "")}</td>`, ms.map((mo) => `<td${cls(k, val(r, k, mo))}>${btn(r, k, mo)}</td>`).join("")];
   const row = (trCls, name, [gt, months]) => `<tr${trCls ? ` class="${trCls}"` : ""}>${name}${gt}${months}</tr>`;
   // fleet Grand Total rows at the top
   const all = { m: {}, fleet, idle, work: sum("work"), repo: sum("repo"), rev, cost };
@@ -3401,6 +3403,7 @@ function renderTu() {
 $("tuTable").onclick = (e) => {
   const tg = e.target.closest("button.tg[data-tg]");
   if (tg) { const c = tg.dataset.tg; tu.open.has(c) ? tu.open.delete(c) : tu.open.add(c); return renderTu(); }
+  const d = e.target.closest("button.num[data-k]"); if (d) return openTuDetail(d.dataset.c, d.dataset.k, d.dataset.m);
   const b = e.target.closest("button.num[data-c]"); if (b) openTank(b.dataset.c);
 };
 $("tuToggleAll").onclick = () => {
@@ -3430,7 +3433,7 @@ function tankDetail(c) {
 }
 function openTank(c) {
   const d = tankDetail(c); if (!d) return;
-  tu.drill = c;
+  tu.drill = { export: () => tankExport(c) };
   const { t, per, lines } = d, dash = '<span class="dash">—</span>';
   const days = { idle: 0, working: 0, reposition: 0 }; for (const p of per) if (p.state in days) days[p.state] += p.days;
   const rev = lines.reduce((a, l) => a + (l[1] === "rev" ? l[5] : 0), 0), cost = lines.reduce((a, l) => a + (l[1] === "cost" ? l[5] : 0), 0);
@@ -3455,14 +3458,65 @@ function openTank(c) {
 function closeTank() { $("tuOverlay").classList.add("hidden"); tu.drill = null; }
 $("uClose").onclick = closeTank;
 $("tuOverlay").onclick = (e) => { if (e.target === $("tuOverlay")) closeTank(); };
-$("uXlsx").onclick = () => {
-  const d = tankDetail(tu.drill); if (!d) return;
+$("uXlsx").onclick = () => tu.drill?.export();
+function tankExport(c) {
+  const d = tankDetail(c); if (!d) return;
   const dt = (v) => (v ? new Date(v + "T00:00") : "");
   const moves = d.per.map((p) => ({ From: dt(p.from), To: dt(p.to), Days: p.days, State: TU_STATE[p.state], Activity: p.activity, Location: p.loc, Agent: p.agent }));
   const money = d.lines.map((l) => ({ "Invoice Date": dt(l[0]), Type: l[1] === "rev" ? "Revenue" : "Cost", Voucher: TU_VOUCHER[l[2]] || l[2], "Invoice No": l[3],
     Charge: l[4], "BL / Job": l[7], Basis: l[6] === "e" ? "Exact" : "Split", "Amount (USD)": l[5] }));
   writeXlsx(`SAR_Tank_${d.t.c}_${tu.from}_to_${tu.to}.xlsx`, [["Movements", moves, [12, 12, 7, 14, 32, 30, 34], 0], ["Revenue and Cost", money, [12, 9, 30, 20, 36, 22, 7, 13], 0]]);
-};
+}
+
+// ---- detail behind a number of the monthly table: k = idle | pct | work (movement periods) or rev | cost | net (invoice lines)
+const TU_DETAIL = { idle: ["Idle Days", "idle"], pct: ["Idle Days", "idle"], work: ["Working Days", "working"], rev: ["Revenue", "rev"], cost: ["Cost", "cost"], net: ["Revenue and Cost", null] };
+function tuDetail(c, k, mo) {
+  const tanks = c ? [(tu.data?.tanks || []).find((t) => t.c === c)].filter(Boolean) : tu.rows.map((r) => r.t);   // all tanks = those in the table (search applies)
+  const fromM = mo || tu.from, toM = mo || tu.to, [title, want] = TU_DETAIL[k], days = ["idle", "pct", "work"].includes(k);
+  const fromD = `${fromM}-01`, toD = tuMonthEnd(toM), rows = [];
+  for (const t of tanks) {
+    if (days) { for (const p of tuPeriods(t, fromM, toM)) if (p.state === want) rows.push({ c: t.c, ...p }); }
+    else for (const l of t.lines) if (l[0] >= fromD && l[0] <= toD && (!want || l[1] === want)) rows.push({ c: t.c, l });
+  }
+  rows.sort(days ? (a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : a.c.localeCompare(b.c)) : (a, b) => (a.l[0] < b.l[0] ? 1 : a.l[0] > b.l[0] ? -1 : a.c.localeCompare(b.c)));
+  return { title: `${title} › ${c || "All tanks"} › ${mo ? monthLabel(mo) : `${monthLabel(tu.from)} – ${monthLabel(tu.to)}`}`, days, rows };
+}
+const tuCount = (n, word) => `${n0(n)} ${word}${n === 1 ? "" : "s"}`;
+function openTuDetail(c, k, mo) {
+  const d = tuDetail(c, k, mo), dash = '<span class="dash">—</span>', shown = d.rows.slice(0, 2000);
+  tu.drill = { export: () => tuDetailExport(d) };
+  $("uTitle").textContent = d.title;
+  let body;
+  if (d.days) {
+    const total = d.rows.reduce((a, p) => a + p.days, 0);
+    $("uSub").textContent = `${tuCount(d.rows.length, "period")} · ${tuCount(new Set(d.rows.map((p) => p.c)).size, "tank")} · ${tuCount(total, "day")}`;
+    body = `<table class="tank-table"><thead><tr><th>Tank No</th><th>From</th><th>To</th><th class="amt">Days</th><th>State</th><th>Activity</th><th>Location</th><th>Agent</th></tr></thead><tbody>`
+      + shown.map((p) => `<tr><td class="mono">${esc(p.c)}</td><td>${shortDate(p.from)}</td><td>${shortDate(p.to)}</td><td class="amt mono">${n0(p.days)}</td>`
+        + `<td><span class="tu-state ${p.state}">${TU_STATE[p.state]}</span></td><td>${esc(p.activity)}</td><td>${p.loc ? esc(p.loc) : dash}</td><td>${p.agent ? esc(p.agent) : dash}</td></tr>`).join("");
+  } else {
+    const sumOf = (kind) => d.rows.reduce((a, x) => a + (x.l[1] === kind ? x.l[5] : 0), 0), rev = sumOf("rev"), cost = sumOf("cost");
+    $("uSub").textContent = `${tuCount(d.rows.length, "invoice line")} · ${tuCount(new Set(d.rows.map((x) => x.c)).size, "tank")}`
+      + (rev ? ` · revenue $${tuMoney(rev)}` : "") + (cost ? ` · cost $${tuMoney(cost)}` : "") + (rev && cost ? ` · gross profit ${rev - cost < 0 ? "−" : ""}$${tuMoney(Math.abs(rev - cost))}` : "");
+    body = `<table class="tank-table"><thead><tr><th>Tank No</th><th>Invoice Date</th><th>Type</th><th>Voucher</th><th>Invoice No</th><th>Charge</th><th>BL / Job</th><th>Basis</th><th class="amt">Amount (USD)</th></tr></thead><tbody>`
+      + shown.map(({ c, l }) => `<tr><td class="mono">${esc(c)}</td><td>${shortDate(l[0])}</td><td>${l[1] === "rev" ? "Revenue" : "Cost"}</td><td>${esc(TU_VOUCHER[l[2]] || l[2])}</td><td class="mono">${esc(l[3])}</td>`
+        + `<td>${esc(l[4])}</td><td class="mono">${l[7] ? esc(l[7]) : dash}</td><td>${l[6] === "e" ? "Exact" : "Split"}</td><td class="amt mono${l[5] < 0 ? " neg" : ""}">${tuMoney(l[5])}</td></tr>`).join("");
+  }
+  const cols = d.days ? 8 : 9;
+  body += (shown.length ? "" : `<tr><td colspan="${cols}" style="text-align:center;padding:20px;color:#94a3b8">Nothing in these months</td></tr>`)
+    + (d.rows.length > shown.length ? `<tr><td colspan="${cols}" style="text-align:center;padding:12px;color:#94a3b8">First ${n0(shown.length)} of ${n0(d.rows.length)} shown — Export to Excel for all</td></tr>` : "")
+    + "</tbody></table>";
+  $("uBody").innerHTML = body;
+  $("tuOverlay").classList.remove("hidden");
+}
+function tuDetailExport(d) {
+  const dt = (v) => (v ? new Date(v + "T00:00") : "");
+  const rows = d.days
+    ? d.rows.map((p) => ({ "Tank No": p.c, From: dt(p.from), To: dt(p.to), Days: p.days, State: TU_STATE[p.state], Activity: p.activity, Location: p.loc, Agent: p.agent }))
+    : d.rows.map(({ c, l }) => ({ "Tank No": c, "Invoice Date": dt(l[0]), Type: l[1] === "rev" ? "Revenue" : "Cost", Voucher: TU_VOUCHER[l[2]] || l[2], "Invoice No": l[3],
+        Charge: l[4], "BL / Job": l[7], Basis: l[6] === "e" ? "Exact" : "Split", "Amount (USD)": l[5] }));
+  writeXlsx(`${d.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`,
+    [["Detail", rows, d.days ? [14, 12, 12, 7, 14, 32, 30, 34] : [14, 12, 9, 30, 20, 36, 22, 7, 13], 1]]);
+}
 
 // ============================================================ Finance
 // Open receivable / payable invoices (same as the Syscon "Invoice Outstanding" report) by party and age.
