@@ -3341,11 +3341,11 @@ function tuRows() {
     if (q && ![r.c, r.lessor, r.last[1] || "", r.last[3] || ""].some((v) => v.toLowerCase().includes(q))) continue;
     rows.push(r);
   }
-  rows.sort((a, b) => b.idle - a.idle || a.c.localeCompare(b.c));   // most idle days first
+  rows.sort((a, b) => (b.fleet ? b.idle / b.fleet : -1) - (a.fleet ? a.idle / a.fleet : -1) || b.idle - a.idle || a.c.localeCompare(b.c));   // highest idle % first
   return rows;
 }
 // rows shown under each tank (and in the Grand Total block): k = monthly field, idle % is worked out from the days
-const TU_MEASURES = [["idle", "Idle Days"], ["pct", "Idle %"], ["work", "Utilised Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Gross Profit (USD)"]];
+const TU_MEASURES = [["pct", "Idle %"], ["idle", "Idle Days"], ["work", "Utilised Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Gross Profit (USD)"]];
 function renderTu() {
   if (!tu.data) return;
   const rows = tuRows(), ms = monthsBetween(tu.from, tu.to), dash = '<span class="dash">—</span>';
@@ -3356,11 +3356,11 @@ function renderTu() {
   const card = (lbl, val, note, color) => `<div class="kpi" style="border-top-color:${color};cursor:default"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="note muted">${note}</div></div>`;
   const range = `${monthLabel(tu.from)} – ${monthLabel(tu.to)}`;
   $("tuKpis").innerHTML = card("Tanks", n0(rows.length), `${n0(idleNow)} idle right now`, "#1E3A8A")
-    + card("Idle Tank-Days", n0(idle), `${fleet ? ((100 * idle) / fleet).toFixed(1) : "0.0"}% of ${n0(fleet)} tank-days in fleet`, "#D98E04")
+    + card("Idle %", `${fleet ? ((100 * idle) / fleet).toFixed(1) : "0.0"}%`, `${n0(idle)} of ${n0(fleet)} tank-days in fleet idle`, "#D98E04")
     + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
     + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
     + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
-  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · idle days by month, most idle first — + for utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · idle % by month, highest first — + for idle days, utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
   const val = (r, k, mo) => {
@@ -3383,7 +3383,7 @@ function renderTu() {
   for (const r of rows.slice(0, 1500)) {
     const open = tu.open.has(r.c), tip = [r.lessor && `Lessor ${r.lessor}`, r.rate != null && `$${r.rate}/day`, r.last[1] && `Now: ${r.last[1]} at ${r.last[3] || "—"} since ${shortDate(r.last[0])}`].filter(Boolean).join(" · ");
     body += row("", `<td class="nm" title="${esc(tip)}"><button class="tg" data-tg="${esc(r.c)}" aria-expanded="${open}">${open ? "−" : "+"}</button>`
-      + `<button class="num tk" data-c="${esc(r.c)}">${esc(r.c)}</button>${r.split ? " *" : ""}<span class="tu-now ${r.last[2] || ""}">${r.last[2] ? esc(r.last[5] || TU_STATE[r.last[2]]) : ""}</span></td>`, cells(r, "idle"));
+      + `<button class="num tk" data-c="${esc(r.c)}">${esc(r.c)}</button>${r.split ? " *" : ""}<span class="tu-now ${r.last[2] || ""}">${r.last[2] ? esc(r.last[5] || TU_STATE[r.last[2]]) : ""}</span></td>`, cells(r, "pct"));
     if (open) for (const [k, h] of TU_MEASURES.slice(1)) body += row("sub", `<td class="nm">${h}</td>`, cells(r, k));
   }
   if (!rows.length) body += `<tr><td colspan="${ms.length + 2}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`;
