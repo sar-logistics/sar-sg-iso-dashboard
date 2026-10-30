@@ -451,9 +451,9 @@ async function mrDataset() {
 // ---------------------------------------------------------------- Tank Utilisation dataset
 //
 // Per tank: its movement history (idle / working days) and the revenue and cost billed to it, only from SARFD:
-//   movements     tblContainerMovement (rows with a deletedNo left out), each activity given a state:
-//                 idle = empty at a depot (available, back from consignee, cleaning, survey, repair, on hire …),
-//                 reposition = empty on the move, working = allocated / laden / with consignee / sub-leased, off = OFF HIRE
+//   movements     tblContainerMovement (rows with a deletedNo left out), each activity given the Tank Status from the
+//                 user's activity list (TANK_STATUS): Depot In = idle, every other status = utilised by the customer,
+//                 OFF HIRE = back with the lessor (not counted). Activities not on the list count as utilised, with no status.
 //   lease         tblContainerTransaction On Hire / Off Hire rows: lessor, daily rate, pick-up date
 //   revenue       tblInvoice Principal Sales, Sub Lease, M&R Sales invoices; Principal Credit Notes negative
 //   cost          tblInvoice Purchase Invoice Container Wise (lease rent, storage, cleaning, repair, lift on/off …)
@@ -466,19 +466,23 @@ async function mrDataset() {
 //      equal to the number of tanks (per-tank rate), is exact; anything else is split equally and marked "split"
 //   3. no container rows and no BL tanks → unassigned (counted in the totals, not on any tank)
 // Amounts are chargeTotalAmountHc / detailAmountHc (USD). Both SAR companies, every date (from Mar 2025).
-const TANK_SNAPSHOT_ID = "tank-utilisation-v1";
+const TANK_SNAPSHOT_ID = "tank-utilisation-v2";
 const TANK_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblInvoice", "tblBL"];
 const TANK_VOUCHERS = { PSI: "rev", SLI: "rev", MRI: "rev", CN: "rev", PICI: "cost", PI: "cost" };
-const TANK_STATE = {
-  idle: ["EMPTY AVAILABLE", "EMPTY RECEIVED FROM CONSIGNEE", "EMPTY RETURN BY SHIPPER", "DEPOT EMPTY IN", "PORT TO DEPOT EMPTY",
-         "WASHING/ UNDER CLEANING", "SURVEY", "UNDER REPAIR", "ON HIRE", "SUB LEASE OFF HIRE", "INTERNAL TERMINAL/ICD/DEPOT TRANSFER"],
-  reposition: ["LOADED EMPTY", "GATE IN PORT EMPTY", "IMPORT DISCHARGE EMPTY", "DEPOT TO PORT EMPTY"],
-  off: ["OFF HIRE"],
+// Activity -> Tank Status, as given by the user (30 Oct 2026). Depot In is the only idle status.
+const TANK_STATUS = {
+  "EMPTY AVAILABLE": "Depot In", "SURVEY": "Depot In", "WASHING/ UNDER CLEANING": "Depot In",
+  "EMPTY ALLOCATED TO SHIPPER": "Depot In", "UNDER REPAIR": "Depot In",
+  "SENT TO CONSIGNEE": "With Consignee", "EMPTY DIRTY PICKED UP BY CONSIGNEE": "With Consignee",
+  "SUB LEASE ON HIRE": "Sub Lease on Hire", "LOADED FULL": "In Transit", "LOADED EMPTY": "In Transit",
+  "OUT TO SHIPPER": "With Shipper", "GATE IN PORT LADEN": "Gate in Port Laden",
+  "INTERNAL TERMINAL/ICD/DEPOT TRANSFER": "Depot Transfer", "DEPOT TO PORT EMPTY": "Depot to Port Empty",
 };
+const tankStatus = (activity) => TANK_STATUS[s(activity).toUpperCase()] || "";
 const tankState = (activity) => {
   const a = s(activity).toUpperCase();
-  for (const [st, list] of Object.entries(TANK_STATE)) if (list.includes(a)) return st;
-  return "working";   // allocated to shipper, out to shipper, laden moves, sent to consignee, rail, sub lease on hire …
+  if (a === OFF_HIRE_ACTIVITY) return "off";
+  return TANK_STATUS[a] === "Depot In" ? "idle" : "working";
 };
 const TANK_RE = /[A-Z]{4}\d{7}/g;
 
@@ -495,7 +499,7 @@ async function buildTankStatus(db, lastSync) {
   ]);
   const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
   const r2 = (v) => Math.round(v * 100) / 100;
-  const tanks = new Map();   // tank no -> { c, size, type, moves: [[date, activity, state, location, agent]], lease, lines: [] }
+  const tanks = new Map();   // tank no -> { c, size, type, moves: [[date, activity, state, location, agent, tank status]], lease, lines: [] }
   const tank = (c) => { let t = tanks.get(c); if (!t) tanks.set(c, t = { c, size: "", type: "", moves: [], lease: null, lines: [] }); return t; };
 
   // movement history, oldest first
@@ -504,7 +508,7 @@ async function buildTankStatus(db, lastSync) {
     const c = s(m.containerNo).toUpperCase(), d = day(m.activityDate); if (!c || !d) continue;
     const t = tank(c);
     t.size = s(m.sizeName) || t.size; t.type = s(m.typeName) || t.type;
-    t.moves.push([d, s(m.activityName), tankState(m.activityName), s(m.toLocationName), s(m.agentName)]);
+    t.moves.push([d, s(m.activityName), tankState(m.activityName), s(m.toLocationName), s(m.agentName), tankStatus(m.activityName)]);
   }
   // lease: the latest On Hire (lessor, daily rate, pick-up) and any Off Hire after it
   for (const x of txns) {
@@ -570,7 +574,7 @@ async function buildTankStatus(db, lastSync) {
   const words = [], wordIx = new Map();
   const w = (v) => { let i = wordIx.get(v); if (i === undefined) { i = words.length; words.push(v); wordIx.set(v, i); } return i; };
   for (const t of out) {
-    t.moves = t.moves.map(([d, a, st, loc, ag]) => [d, w(a), st[0], w(loc), w(ag)]);   // state: i(dle) w(orking) r(eposition) o(ff)
+    t.moves = t.moves.map(([d, a, st, loc, ag, ts]) => [d, w(a), st[0], w(loc), w(ag), w(ts)]);   // state: i(dle) w(orking: utilised) o(ff)
     t.lines = t.lines.map(([d, k, v, no, ch, amt, how, ref]) => [d, k === "rev" ? 1 : 0, v, no, w(ch), amt, how === "e" ? 1 : 0, w(ref)]);
   }
   const top = [...unBy].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 15).map(([k, v]) => [...k.split("|"), r2(v)]);
