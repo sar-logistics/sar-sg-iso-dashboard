@@ -3312,7 +3312,7 @@ function tuPeriods(t, fromM = tu.from, toM = tu.to) {
   t.moves.forEach((m, i) => {
     const a = dayNo(m[0]), b = i + 1 < t.moves.length ? dayNo(t.moves[i + 1][0]) : dayNo(todayIso()) + 1;
     const from = Math.max(a, lo), to = Math.min(b, hi);
-    if (to > from) out.push({ from: iso(new Date(from * dayMs)), to: iso(new Date((to - 1) * dayMs)), days: to - from, activity: m[1], state: m[2], loc: m[3], agent: m[4], status: m[5] || "" });
+    if (to > from && m[2] !== "off") out.push({ from: iso(new Date(from * dayMs)), to: iso(new Date((to - 1) * dayMs)), days: to - from, activity: m[1], state: m[2], loc: m[3], agent: m[4], status: m[5] || "" });
   });
   return out;
 }
@@ -3392,7 +3392,8 @@ function renderTu() {
 
   const u = tu.data.unassigned || {};
   $("tuFoot").textContent = "Idle = empty available, survey, washing / under cleaning, empty allocated to shipper, under repair. "
-    + "Utilised = every other status (with consignee, with shipper, in transit, sub lease on hire, gate in port laden, depot transfer, depot to port empty), and activities not on the Tank Status list; off hire is not counted. "
+    + "Utilised = every other status (with consignee, with shipper, in transit, sub lease on hire, gate in port laden, depot transfer, depot to port empty), and activities not on the Tank Status list. "
+    + `Off hire is left out: tanks whose latest movement is OFF HIRE are not shown${tu.data.offHire ? ` (${n0(tu.data.offHire)} tanks)` : ""}, nor off-hire periods of tanks hired again. `
     + "Gross Profit = revenue − cost. Each movement lasts until the tank's next one; Idle % = idle days ÷ days in fleet. "
     + "Revenue = principal sales, sub-lease and M&R sales invoices less principal credit notes; cost = container-wise and BL purchase invoices (lease rent, storage, cleaning, repair, freight …), by invoice month, USD. "
     + "A charge goes to a tank from the invoice's own per-tank amounts, else its tank list or BL tanks (exact when priced per tank); * = includes charges split equally across the tanks of an invoice. "

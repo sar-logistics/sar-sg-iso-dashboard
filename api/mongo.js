@@ -466,7 +466,7 @@ async function mrDataset() {
 //      equal to the number of tanks (per-tank rate), is exact; anything else is split equally and marked "split"
 //   3. no container rows and no BL tanks → unassigned (counted in the totals, not on any tank)
 // Amounts are chargeTotalAmountHc / detailAmountHc (USD). Both SAR companies, every date (from Mar 2025).
-const TANK_SNAPSHOT_ID = "tank-utilisation-v3";
+const TANK_SNAPSHOT_ID = "tank-utilisation-v4";
 const TANK_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblInvoice", "tblBL"];
 const TANK_VOUCHERS = { PSI: "rev", SLI: "rev", MRI: "rev", CN: "rev", PICI: "cost", PI: "cost" };
 // Activity -> Tank Status, as given by the user (30 Oct 2026). Idle (the user's Depot In) is the only idle status.
@@ -567,7 +567,10 @@ async function buildTankStatus(db, lastSync) {
       for (const c of ts) put(c, ch, amt / ts.length, how);
     }
   }
-  const out = [...tanks.values()].filter((t) => t.moves.length || t.lines.length);
+  // tanks whose latest movement is OFF HIRE are back with the lessor: left out of the report (user, 30 Oct 2026)
+  const isOff = (t) => t.moves.length && t.moves[t.moves.length - 1][2] === "off";
+  const offHire = [...tanks.values()].filter(isOff).length;
+  const out = [...tanks.values()].filter((t) => !isOff(t) && (t.moves.length || t.lines.length));
   for (const t of out) t.lines.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   // Repeated text (activity, location, agent, charge, BL / job) goes into one word list and rows carry its index,
   // so the response stays under Vercel's 4.5 MB limit; the page expands it back (tuExpand in index.html).
@@ -579,7 +582,7 @@ async function buildTankStatus(db, lastSync) {
   }
   const top = [...unBy].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 15).map(([k, v]) => [...k.split("|"), r2(v)]);
   return { words, tanks: out, unassigned: { rev: r2(unassigned.rev), cost: r2(unassigned.cost), lines: unassigned.lines, top },
-           assigned: { exact, split }, lastSync, generatedAt: new Date().toISOString() };
+           assigned: { exact, split }, offHire, lastSync, generatedAt: new Date().toISOString() };
 }
 
 async function tankStatusDataset() {
