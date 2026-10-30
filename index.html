@@ -3341,11 +3341,11 @@ function tuRows() {
     if (q && ![r.c, r.lessor, r.last[1] || "", r.last[3] || ""].some((v) => v.toLowerCase().includes(q))) continue;
     rows.push(r);
   }
-  rows.sort((a, b) => (b.fleet ? b.idle / b.fleet : -1) - (a.fleet ? a.idle / a.fleet : -1) || b.idle - a.idle || a.c.localeCompare(b.c));   // highest idle % first
+  rows.sort((a, b) => (a.fleet ? a.work / a.fleet : 2) - (b.fleet ? b.work / b.fleet : 2) || b.idle - a.idle || a.c.localeCompare(b.c));   // lowest utilisation % first
   return rows;
 }
-// rows shown under each tank (and in the Grand Total block): k = monthly field, idle % is worked out from the days
-const TU_MEASURES = [["pct", "Idle %"], ["idle", "Idle Days"], ["work", "Utilised Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Gross Profit (USD)"]];
+// rows shown under each tank (and in the Grand Total block): k = monthly field, utilisation % is worked out from the days
+const TU_MEASURES = [["pct", "Utilisation %"], ["work", "Utilised Days"], ["idle", "Idle Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Gross Profit (USD)"]];
 function renderTu() {
   if (!tu.data) return;
   const rows = tuRows(), ms = monthsBetween(tu.from, tu.to), dash = '<span class="dash">—</span>';
@@ -3356,16 +3356,16 @@ function renderTu() {
   const card = (lbl, val, note, color) => `<div class="kpi" style="border-top-color:${color};cursor:default"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="note muted">${note}</div></div>`;
   const range = `${monthLabel(tu.from)} – ${monthLabel(tu.to)}`;
   $("tuKpis").innerHTML = card("Tanks", n0(rows.length), `${n0(idleNow)} idle right now`, "#1E3A8A")
-    + card("Idle %", `${fleet ? ((100 * idle) / fleet).toFixed(1) : "0.0"}%`, `${n0(idle)} of ${n0(fleet)} tank-days in fleet idle`, "#D98E04")
+    + card("Utilisation %", `${fleet ? ((100 * (fleet - idle)) / fleet).toFixed(1) : "0.0"}%`, `${n0(fleet - idle)} of ${n0(fleet)} tank-days in fleet utilised`, "#D98E04")
     + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
     + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
     + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
-  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · idle % by month, highest first — + for idle days, utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % by month, lowest first — + for utilised days, idle days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
   const val = (r, k, mo) => {
     const get = (f) => (mo ? r.m[f][mo] : r[f]);
-    if (k === "pct") { const f = get("idle") + get("work"); return f ? (100 * get("idle")) / f : null; }
+    if (k === "pct") { const f = get("idle") + get("work"); return f ? (100 * get("work")) / f : null; }
     if (k === "net") return get("rev") - get("cost");
     return get(k);
   };
@@ -3394,7 +3394,7 @@ function renderTu() {
   $("tuFoot").textContent = "Idle = empty available, survey, washing / under cleaning, empty allocated to shipper, under repair. "
     + "Utilised = every other status (with consignee, with shipper, in transit, sub lease on hire, gate in port laden, depot transfer, depot to port empty), and activities not on the Tank Status list. "
     + `Off hire is left out: tanks whose latest movement is OFF HIRE are not shown${tu.data.offHire ? ` (${n0(tu.data.offHire)} tanks)` : ""}, nor off-hire periods of tanks hired again. `
-    + "Gross Profit = revenue − cost. Each movement lasts until the tank's next one; Idle % = idle days ÷ days in fleet. "
+    + "Gross Profit = revenue − cost. Each movement lasts until the tank's next one; Utilisation % = utilised days ÷ days in fleet. "
     + "Revenue = principal sales, sub-lease and M&R sales invoices less principal credit notes; cost = container-wise and BL purchase invoices (lease rent, storage, cleaning, repair, freight …), by invoice month, USD. "
     + "A charge goes to a tank from the invoice's own per-tank amounts, else its tank list or BL tanks (exact when priced per tank); * = includes charges split equally across the tanks of an invoice. "
     + `Not on any tank (no tank list in SARFD, all dates): revenue $${tuMoney(u.rev || 0)}, cost $${tuMoney(u.cost || 0)} — mostly lessors' lease rent invoices without tanks. `
@@ -3416,7 +3416,7 @@ $("tuXlsx").onclick = () => {   // one row per tank and measure, months across (
   const ms = monthsBetween(tu.from, tu.to), r2 = (v) => (v == null ? "" : Math.round(v * 100) / 100);
   const v = (r, k, mo) => {
     const get = (f) => (mo ? r.m[f][mo] : r[f]);
-    if (k === "pct") { const f = get("idle") + get("work"); return f ? r2((100 * get("idle")) / f) : null; }
+    if (k === "pct") { const f = get("idle") + get("work"); return f ? r2((100 * get("work")) / f) : null; }
     return r2(k === "net" ? get("rev") - get("cost") : get(k));
   };
   const rows = [];
@@ -3470,7 +3470,7 @@ function tankExport(c) {
 }
 
 // ---- detail behind a number of the monthly table: k = idle | pct | work (movement periods) or rev | cost | net (invoice lines)
-const TU_DETAIL = { idle: ["Idle Days", "idle"], pct: ["Idle %", "idle"], work: ["Utilised Days", "working"], rev: ["Revenue", "rev"], cost: ["Cost", "cost"], net: ["Revenue and Cost", null] };
+const TU_DETAIL = { idle: ["Idle Days", "idle"], pct: ["Utilisation %", "working"], work: ["Utilised Days", "working"], rev: ["Revenue", "rev"], cost: ["Cost", "cost"], net: ["Revenue and Cost", null] };
 function tuDetail(c, k, mo) {
   const tanks = c ? [(tu.data?.tanks || []).find((t) => t.c === c)].filter(Boolean) : tu.rows.map((r) => r.t);   // all tanks = those in the table (search applies)
   const fromM = mo || tu.from, toM = mo || tu.to, [title, want] = TU_DETAIL[k], days = ["idle", "pct", "work"].includes(k);
