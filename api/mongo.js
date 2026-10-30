@@ -466,8 +466,8 @@ async function mrDataset() {
 //      equal to the number of tanks (per-tank rate), is exact; anything else is split equally and marked "split"
 //   3. no container rows and no BL tanks → unassigned (counted in the totals, not on any tank)
 // Amounts are chargeTotalAmountHc / detailAmountHc (USD). Both SAR companies, every date (from Mar 2025).
-const TANK_SNAPSHOT_ID = "tank-utilisation-v4";
-const TANK_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblInvoice", "tblBL"];
+const TANK_SNAPSHOT_ID = "tank-utilisation-v5";
+const TANK_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblInvoice", "tblBL", "tblJob"];
 const TANK_VOUCHERS = { PSI: "rev", SLI: "rev", MRI: "rev", CN: "rev", PICI: "cost", PI: "cost" };
 // Activity -> Tank Status, as given by the user (30 Oct 2026). Idle (the user's Depot In) is the only idle status.
 const TANK_STATUS = {
@@ -487,19 +487,34 @@ const tankState = (activity) => {
 const TANK_RE = /[A-Z]{4}\d{7}/g;
 
 async function buildTankStatus(db, lastSync) {
-  const [moves, txns, inv, bls] = await Promise.all([
+  const [moves, txns, inv, bls, blHeads, jobs] = await Promise.all([
     db.collection("tblContainerMovement").find({ deletedNo: { $exists: false } }, { projection: { _id: 0, containerNo: 1, containerMovementId: 1,
-      activityDate: 1, activityName: 1, toLocationName: 1, agentName: 1, sizeName: 1, typeName: 1 } }).toArray(),
+      activityDate: 1, activityName: 1, toLocationName: 1, agentName: 1, sizeName: 1, typeName: 1, importBlNo: 1, exportBlNo: 1, jobNo: 1 } }).toArray(),
     db.collection("tblContainerTransaction").find({ pageTypeName: { $in: ["On Hire", "Off Hire"] } }, { projection: { _id: 0,
       detailContainerNo: 1, pageTypeName: 1, partyName: 1, detailRate: 1, detailPickUpDate: 1, containerTransactionDate: 1 } }).toArray(),
     db.collection("tblInvoice").find({ recordType: { $in: ["H", "C", "D"] }, voucherCode: { $in: Object.keys(TANK_VOUCHERS) }, invoiceNo: { $not: /^PRO/i } },
       { projection: { _id: 0, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, recordType: 1, chargeName: 1, chargeQuantity: 1,
         chargeTotalAmountHc: 1, detailContainerNo: 1, detailAmountHc: 1, containerNos: 1, blNo: 1, jobNo: 1 } }).toArray(),
     db.collection("tblBL").find({ recordType: "D", container_containerNo: { $nin: [null, ""] } }, { projection: { _id: 0, blNo: 1, container_containerNo: 1 } }).toArray(),
+    db.collection("tblBL").find({ recordType: "H", deletedNo: { $exists: false } }, { projection: { _id: 0, blNo: 1, hblNo: 1, polName: 1, podName: 1 } }).toArray(),
+    db.collection("tblJob").find({}, { projection: { _id: 0, jobNo: 1, polName: 1, podName: 1 } }).toArray(),
   ]);
+  // POL / POD of a movement (tblContainerMovement has none): its import / export BL in tblBL, else its job in tblJob.
+  // A BL or job number that SARFD has more than once with different ports gives no POL / POD (no guessing).
+  const portsBy = (rows, keys) => {
+    const m = new Map();
+    for (const r of rows) for (const k of keys(r)) {
+      const v = `${s(r.polName)}|${s(r.podName)}`; if (v === "|") continue;
+      m.set(k, m.has(k) && m.get(k) !== v ? null : v);
+    }
+    return m;
+  };
+  const blPorts = portsBy(blHeads, (b) => [...new Set([s(b.blNo).toUpperCase(), s(b.hblNo).toUpperCase()].filter(Boolean))]);
+  const jobPorts = portsBy(jobs, (j) => (s(j.jobNo) ? [s(j.jobNo)] : []));
+  const movePorts = (m) => (blPorts.get(s(m.importBlNo).toUpperCase()) || blPorts.get(s(m.exportBlNo).toUpperCase()) || jobPorts.get(s(m.jobNo)) || "|").split("|");
   const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
   const r2 = (v) => Math.round(v * 100) / 100;
-  const tanks = new Map();   // tank no -> { c, size, type, moves: [[date, activity, state, location, agent, tank status]], lease, lines: [] }
+  const tanks = new Map();   // tank no -> { c, size, type, moves: [[date, activity, state, location, agent, tank status, pol, pod]], lease, lines: [] }
   const tank = (c) => { let t = tanks.get(c); if (!t) tanks.set(c, t = { c, size: "", type: "", moves: [], lease: null, lines: [] }); return t; };
 
   // movement history, oldest first
@@ -508,7 +523,7 @@ async function buildTankStatus(db, lastSync) {
     const c = s(m.containerNo).toUpperCase(), d = day(m.activityDate); if (!c || !d) continue;
     const t = tank(c);
     t.size = s(m.sizeName) || t.size; t.type = s(m.typeName) || t.type;
-    t.moves.push([d, s(m.activityName), tankState(m.activityName), s(m.toLocationName), s(m.agentName), tankStatus(m.activityName)]);
+    t.moves.push([d, s(m.activityName), tankState(m.activityName), s(m.toLocationName), s(m.agentName), tankStatus(m.activityName), ...movePorts(m)]);
   }
   // lease: the latest On Hire (lessor, daily rate, pick-up) and any Off Hire after it
   for (const x of txns) {
@@ -577,7 +592,7 @@ async function buildTankStatus(db, lastSync) {
   const words = [], wordIx = new Map();
   const w = (v) => { let i = wordIx.get(v); if (i === undefined) { i = words.length; words.push(v); wordIx.set(v, i); } return i; };
   for (const t of out) {
-    t.moves = t.moves.map(([d, a, st, loc, ag, ts]) => [d, w(a), st[0], w(loc), w(ag), w(ts)]);   // state: i(dle) w(orking: utilised) o(ff)
+    t.moves = t.moves.map(([d, a, st, loc, ag, ts, pol, pod]) => [d, w(a), st[0], w(loc), w(ag), w(ts), w(pol), w(pod)]);   // state: i(dle) w(orking: utilised) o(ff)
     t.lines = t.lines.map(([d, k, v, no, ch, amt, how, ref]) => [d, k === "rev" ? 1 : 0, v, no, w(ch), amt, how === "e" ? 1 : 0, w(ref)]);
   }
   const top = [...unBy].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 15).map(([k, v]) => [...k.split("|"), r2(v)]);
