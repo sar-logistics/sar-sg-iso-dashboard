@@ -452,7 +452,7 @@ async function mrDataset() {
 //
 // Per tank: its movement history (idle / working days) and the revenue and cost billed to it, only from SARFD:
 //   movements     tblContainerMovement (rows with a deletedNo left out), each activity given the Tank Status from the
-//                 user's activity list (TANK_STATUS): Depot In = idle, every other status = utilised by the customer,
+//                 user's activity list (TANK_STATUS): Idle (the user's Depot In), every other status = utilised by the customer,
 //                 OFF HIRE = back with the lessor (not counted). Activities not on the list count as utilised, with no status.
 //   lease         tblContainerTransaction On Hire / Off Hire rows: lessor, daily rate, pick-up date
 //   revenue       tblInvoice Principal Sales, Sub Lease, M&R Sales invoices; Principal Credit Notes negative
@@ -466,13 +466,13 @@ async function mrDataset() {
 //      equal to the number of tanks (per-tank rate), is exact; anything else is split equally and marked "split"
 //   3. no container rows and no BL tanks → unassigned (counted in the totals, not on any tank)
 // Amounts are chargeTotalAmountHc / detailAmountHc (USD). Both SAR companies, every date (from Mar 2025).
-const TANK_SNAPSHOT_ID = "tank-utilisation-v2";
+const TANK_SNAPSHOT_ID = "tank-utilisation-v3";
 const TANK_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblInvoice", "tblBL"];
 const TANK_VOUCHERS = { PSI: "rev", SLI: "rev", MRI: "rev", CN: "rev", PICI: "cost", PI: "cost" };
-// Activity -> Tank Status, as given by the user (30 Oct 2026). Depot In is the only idle status.
+// Activity -> Tank Status, as given by the user (30 Oct 2026). Idle (the user's Depot In) is the only idle status.
 const TANK_STATUS = {
-  "EMPTY AVAILABLE": "Depot In", "SURVEY": "Depot In", "WASHING/ UNDER CLEANING": "Depot In",
-  "EMPTY ALLOCATED TO SHIPPER": "Depot In", "UNDER REPAIR": "Depot In",
+  "EMPTY AVAILABLE": "Idle", "SURVEY": "Idle", "WASHING/ UNDER CLEANING": "Idle",
+  "EMPTY ALLOCATED TO SHIPPER": "Idle", "UNDER REPAIR": "Idle",
   "SENT TO CONSIGNEE": "With Consignee", "EMPTY DIRTY PICKED UP BY CONSIGNEE": "With Consignee",
   "SUB LEASE ON HIRE": "Sub Lease on Hire", "LOADED FULL": "In Transit", "LOADED EMPTY": "In Transit",
   "OUT TO SHIPPER": "With Shipper", "GATE IN PORT LADEN": "Gate in Port Laden",
@@ -482,7 +482,7 @@ const tankStatus = (activity) => TANK_STATUS[s(activity).toUpperCase()] || "";
 const tankState = (activity) => {
   const a = s(activity).toUpperCase();
   if (a === OFF_HIRE_ACTIVITY) return "off";
-  return TANK_STATUS[a] === "Depot In" ? "idle" : "working";
+  return TANK_STATUS[a] === "Idle" ? "idle" : "working";
 };
 const TANK_RE = /[A-Z]{4}\d{7}/g;
 

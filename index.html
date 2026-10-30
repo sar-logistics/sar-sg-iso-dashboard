@@ -3263,7 +3263,7 @@ $("quoXlsx").onclick = () => {
 };
 
 // ============================================================ Tank Utilisation
-// Per tank, for the chosen months: days idle (Tank Status Depot In) / utilised (every other status) and the revenue
+// Per tank, for the chosen months: days idle (Tank Status Idle) / utilised (every other status) and the revenue
 // and cost billed to it. Built by the API only from SARFD (tblContainerMovement, tblContainerTransaction, tblInvoice,
 // tblBL) — see buildTankStatus in api/mongo.js for how each invoice charge is put on tanks.
 const tu = { data: null, from: "2026-01", to: "", q: "", open: new Set(), drill: null, rows: [] };   // open = tanks showing their + rows
@@ -3391,7 +3391,7 @@ function renderTu() {
   $("tuToggleAll").textContent = rows.length && rows.every((r) => tu.open.has(r.c)) ? "Collapse all" : "Expand all";
 
   const u = tu.data.unassigned || {};
-  $("tuFoot").textContent = "Idle = Tank Status Depot In (empty available, survey, washing / under cleaning, empty allocated to shipper, under repair). "
+  $("tuFoot").textContent = "Idle = empty available, survey, washing / under cleaning, empty allocated to shipper, under repair. "
     + "Utilised = every other status (with consignee, with shipper, in transit, sub lease on hire, gate in port laden, depot transfer, depot to port empty), and activities not on the Tank Status list; off hire is not counted. "
     + "Gross Profit = revenue − cost. Each movement lasts until the tank's next one; Idle % = idle days ÷ days in fleet. "
     + "Revenue = principal sales, sub-lease and M&R sales invoices less principal credit notes; cost = container-wise and BL purchase invoices (lease rent, storage, cleaning, repair, freight …), by invoice month, USD. "
