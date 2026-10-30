@@ -3491,8 +3491,8 @@ function openTuDetail(c, k, mo) {
   if (d.days) {
     const total = d.rows.reduce((a, p) => a + p.days, 0);
     $("uSub").textContent = `${tuCount(d.rows.length, "period")} · ${tuCount(new Set(d.rows.map((p) => p.c)).size, "tank")} · ${tuCount(total, "day")}`;
-    body = `<table class="tank-table"><thead><tr><th>Tank No</th><th>From</th><th>To</th><th class="amt">Days</th><th>Tank Status</th><th>Activity</th><th>POL</th><th>POD</th><th>Agent</th></tr></thead><tbody>`
-      + shown.map((p) => `<tr><td class="mono">${esc(p.c)}</td><td>${shortDate(p.from)}</td><td>${shortDate(p.to)}</td><td class="amt mono">${n0(p.days)}</td>`
+    body = `<table class="tank-table"><thead><tr><th>Tank No</th><th>Tank Status</th><th>Activity</th><th>POL</th><th>POD</th><th>Agent</th></tr></thead><tbody>`
+      + shown.map((p) => `<tr><td class="mono">${esc(p.c)}</td>`
         + `<td><span class="tu-state ${p.state}" title="${TU_STATE[p.state]}">${esc(p.status || TU_STATE[p.state])}</span></td><td>${esc(p.activity)}</td><td>${p.pol ? esc(p.pol) : dash}</td><td>${p.pod ? esc(p.pod) : dash}</td><td>${p.agent ? esc(p.agent) : dash}</td></tr>`).join("");
   } else {
     const sumOf = (kind) => d.rows.reduce((a, x) => a + (x.l[1] === kind ? x.l[5] : 0), 0), rev = sumOf("rev"), cost = sumOf("cost");
@@ -3512,11 +3512,11 @@ function openTuDetail(c, k, mo) {
 function tuDetailExport(d) {
   const dt = (v) => (v ? new Date(v + "T00:00") : "");
   const rows = d.days
-    ? d.rows.map((p) => ({ "Tank No": p.c, From: dt(p.from), To: dt(p.to), Days: p.days, State: TU_STATE[p.state], "Tank Status": p.status, Activity: p.activity, POL: p.pol, POD: p.pod, Agent: p.agent }))
+    ? d.rows.map((p) => ({ "Tank No": p.c, State: TU_STATE[p.state], "Tank Status": p.status, Activity: p.activity, POL: p.pol, POD: p.pod, Agent: p.agent }))
     : d.rows.map(({ c, l }) => ({ "Tank No": c, "Invoice Date": dt(l[0]), Type: l[1] === "rev" ? "Revenue" : "Cost", Voucher: TU_VOUCHER[l[2]] || l[2], "Invoice No": l[3],
         Charge: l[4], "BL / Job": l[7], Basis: l[6] === "e" ? "Exact" : "Split", "Amount (USD)": l[5] }));
   writeXlsx(`${d.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`,
-    [["Detail", rows, d.days ? [14, 12, 12, 7, 10, 20, 32, 26, 26, 34] : [14, 12, 9, 30, 20, 36, 22, 7, 13], 1]]);
+    [["Detail", rows, d.days ? [14, 10, 20, 32, 26, 26, 34] : [14, 12, 9, 30, 20, 36, 22, 7, 13], 1]]);
 }
 
 // ============================================================ Finance
