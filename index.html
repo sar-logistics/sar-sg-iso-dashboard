@@ -494,6 +494,15 @@
   .ua-table td { font-family: "Plus Jakarta Sans", sans-serif; }
   .ua-table td.mono-cell { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--ink-soft); }
   .ua-table td.ua-empty { padding: 32px; text-align: center; font-style: italic; color: var(--ink-soft); }
+  .sync-log { margin-top: 18px; }
+  #syncLogSub b { color: var(--ink); }
+  .sync-run { cursor: pointer; }
+  .sync-run:hover td { background: var(--bg, #f6f7f9); }
+  .sync-run td:first-child::before { content: "\25B8"; display: inline-block; width: 14px; color: var(--ink-faint); transition: transform .15s; }
+  .sync-run.open td:first-child::before { transform: rotate(90deg); }
+  .sync-detail td { padding-top: 6px; padding-bottom: 6px; font-size: 12.5px; background: var(--card); }
+  .sync-detail td:first-child { padding-left: 32px; }
+  .sync-detail .err { color: #B42318; white-space: normal; max-width: 520px; }
   .name-avatar { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-right: 8px; border-radius: 50%;
                  color: #fff; font-size: 10.5px; font-weight: 700; vertical-align: middle; }
   .role-pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }
@@ -681,6 +690,10 @@
     <a href="/" data-page="admin">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
       Admin Panel
+    </a>
+    <a href="/" data-page="log">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 12h7M9 16h7M9 20h4"/></svg>
+      Dashboard Log
     </a>
   </nav>
   <div class="bottom">
@@ -1151,6 +1164,26 @@
     </div>
     <div class="tbl-wrap" style="max-height:680px"><table class="fin-table" id="finTable"></table></div>
     <p class="foot" style="margin:10px 0 0" id="finFoot"></p>
+  </section>
+</main>
+
+<main id="logPage" class="hidden">
+  <div class="admin-panel-head">
+    <div><h1>Dashboard Log</h1><p id="syncLogSub">SARFD → Google Sheet → MongoDB sync runs, newest first. Scheduled at 9 am, 11 am, 1 pm, 3 pm and 5 pm IST.</p></div>
+    <div class="ua-actions">
+      <button type="button" class="import-users-btn" id="syncLogRefresh">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+  <div class="alert hidden" id="syncLogErr" role="alert"></div>
+  <section class="card panel sync-log">
+    <h2>Sync Runs</h2><p class="sub">Last 40 runs · click a run to see each table</p>
+    <div class="tbl-wrap"><table class="ua-table">
+      <thead><tr><th>Run started</th><th>Finished</th><th>Duration</th><th>Tables</th><th>Rows</th><th>Status</th></tr></thead>
+      <tbody id="syncLogBody"></tbody>
+    </table></div>
   </section>
 </main>
 
@@ -1625,7 +1658,7 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", tu: "Tank Utilisation", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", tu: "Tank Utilisation", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel", log: "Dashboard Log" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
 let currentPage = "sales";   // after sign-in Performance (Billing Details) opens first
@@ -1633,7 +1666,7 @@ function route(next) {
   if (next) currentPage = next;
   if (location.hash || location.pathname !== "/" || location.search) history.replaceState(null, "", "/");
   let page = PAGES[currentPage] ? currentPage : "sales";
-  if ((page === "admin" || page === "usage") && !isAdmin()) page = "sales";
+  if ((page === "admin" || page === "usage" || page === "log") && !isAdmin()) page = "sales";
   for (const a of document.querySelectorAll(".side nav a:not(.sub)")) {
     if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -1645,6 +1678,7 @@ function route(next) {
   $("app").classList.toggle("hidden", page !== "sales");
   $("adminPage").classList.toggle("hidden", page !== "admin");
   $("usagePage").classList.toggle("hidden", page !== "usage");
+  $("logPage").classList.toggle("hidden", page !== "log");
   $("mrPage").classList.toggle("hidden", page !== "mr");
   $("invPage").classList.toggle("hidden", page !== "inv");
   $("invHead").classList.toggle("hidden", page !== "inv");
@@ -1660,6 +1694,7 @@ function route(next) {
   $("refreshBtn").classList.toggle("hidden", !["sales", "mr", "inv", "dep", "fin", "quo", "tu"].includes(page));
   syncTopbarH();
   if (page === "admin") loadUsers();
+  if (page === "log") loadSyncLog();
   if (page === "usage") loadUsage();
   if (page === "mr") { if (mr.data) renderMr(); else loadMr(); }
   if (page === "inv") { if (mr.data) renderInv(); else loadInv(false); }
@@ -3844,6 +3879,56 @@ function renderUsage() {
     </tr>`;
   }).join("");
 }
+
+const SYNC_STATUS = { success: ["Success", "#1F8A4C"], warning: ["Warning", "#D98E04"], failed: ["Failed", "#B42318"] };
+const syncPill = (s) => { const [label, color] = SYNC_STATUS[s] || [s || "–", "#B0B8C4"]; return `<span class="status-pill"><span class="dot" style="background:${color}"></span>${esc(label)}</span>`; };
+const syncDur = (ms) => { const s = Math.round((ms || 0) / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`; };
+async function loadSyncLog() {
+  $("syncLogErr").classList.add("hidden");
+  if (!state.syncLog) $("syncLogBody").innerHTML = '<tr><td colspan="6" class="ua-empty">Loading…</td></tr>';
+  $("syncLogRefresh").disabled = true;
+  try { state.syncLog = await api("/api/mongo", { dataset: "syncLog" }); renderSyncLog(); }
+  catch (e) {
+    if (e.message === "signed out" || e.message === "no access") return;
+    $("syncLogErr").textContent = "Could not load the dashboard log: " + e.message; $("syncLogErr").classList.remove("hidden");
+    if (!state.syncLog) $("syncLogBody").innerHTML = '<tr><td colspan="6" class="ua-empty">Could not load the dashboard log.</td></tr>';
+  } finally { $("syncLogRefresh").disabled = false; }
+}
+$("syncLogRefresh").onclick = loadSyncLog;
+function renderSyncLog() {
+  const runs = state.syncLog?.runs || [];
+  const ok = runs.find((r) => r.status !== "failed");
+  $("syncLogSub").innerHTML = "SARFD → Google Sheet → MongoDB sync runs, newest first. Scheduled at 9 am, 11 am, 1 pm, 3 pm and 5 pm IST."
+    + (ok ? ` Last successful sync: <b>${esc(fmtLogin(ok.endedAt || ok.startedAt))}</b> (${esc(ago(ok.endedAt || ok.startedAt))}).` : "");
+  if (!runs.length) { $("syncLogBody").innerHTML = '<tr><td colspan="6" class="ua-empty">No sync runs recorded yet.</td></tr>'; return; }
+  $("syncLogBody").innerHTML = runs.map((r, i) => {
+    const loaded = r.tables.filter((x) => x.table !== "(connection check)");
+    const okTables = loaded.filter((x) => x.status === "success").length;
+    const dur = r.endedAt ? +new Date(r.endedAt) - +new Date(r.startedAt) : 0;
+    const detail = r.tables.map((x) => {
+      const err = [x.error, x.sheetError].filter(Boolean).join(" · ");
+      return `<tr class="sync-detail hidden" data-run="${i}">
+        <td>${esc(x.table)}</td>
+        <td>Sheet: ${esc(x.sheetStatus || "–")}</td>
+        <td>${x.durationMs ? syncDur(x.durationMs) : '<span class="blank">–</span>'}</td>
+        <td class="err">${esc(err)}</td>
+        <td>${n0(x.rowsRead)}</td>
+        <td>${syncPill(x.status)}</td></tr>`;
+    }).join("");
+    return `<tr class="sync-run" data-run="${i}" title="Show each table">
+      <td>${esc(fmtLogin(r.startedAt))}</td>
+      <td>${r.endedAt && loaded.length ? esc(fmtLogin(r.endedAt)) : '<span class="blank">–</span>'}</td>
+      <td>${loaded.length ? syncDur(dur) : '<span class="blank">–</span>'}</td>
+      <td>${loaded.length ? `${okTables} / ${loaded.length} OK` : "None loaded"}</td>
+      <td>${n0(r.rowsRead)}</td>
+      <td>${syncPill(r.status)}</td></tr>${detail}`;
+  }).join("");
+}
+$("syncLogBody").onclick = (e) => {
+  const row = e.target.closest(".sync-run"); if (!row) return;
+  const open = row.classList.toggle("open");
+  document.querySelectorAll(`#syncLogBody .sync-detail[data-run="${row.dataset.run}"]`).forEach((tr) => tr.classList.toggle("hidden", !open));
+};
 
 function usersNote(ok, err) {
   $("usersOk").textContent = ok || ""; $("usersOk").classList.toggle("hidden", !ok);

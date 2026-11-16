@@ -10,6 +10,7 @@
 //                    onAccount: number = amount received / paid on account, null = clear and use SARFD's figure)
 //   POST /api/mongo  { dataset: "me" }    -> { email, name, role }        (signed in; login: true also records a sign-in)
 //   POST /api/mongo  { dataset: "usage" } -> sign-in stats per user + logins per day  (admins)
+//   POST /api/mongo  { dataset: "syncLog" } -> recent SARFD sync runs with their per-table results  (admins)
 //   POST /api/mongo  { collection, pipeline } -> read-only aggregate      (signed in)
 //   POST /api/mongo  { dataset: "users" }                 -> users with access     (admins)
 //   POST /api/mongo  { action: "saveUser", email, name, role, disabled, create } -> users  (admins)
@@ -1089,6 +1090,38 @@ async function usageAnalytics(user) {
   };
 }
 
+// ---------------------------------------------------------------- dashboard log
+// sarfd_sync.py writes one sarfdSyncHistory row per table per run (and one "(connection check)"
+// row when a run stops before loading anything). Admins see the latest runs, newest first.
+
+const SYNC_LOG_RUNS = 40;
+
+async function syncLog(user) {
+  requireAdmin(user);
+  const db = await getDb();
+  const runs = await db.collection("sarfdSyncHistory").aggregate([
+    { $sort: { startedAt: 1 } },
+    { $group: {
+        _id: "$runId", startedAt: { $min: "$startedAt" },
+        tables: { $push: { table: "$table", startedAt: "$startedAt", status: "$status", rowsRead: "$rowsRead",
+                           rowsInserted: "$rowsInserted", sheetStatus: "$sheetStatus", sheetRows: "$sheetRows",
+                           durationMs: "$durationMs", error: "$error", sheetError: "$sheetError" } } } },
+    { $sort: { startedAt: -1 } },
+    { $limit: SYNC_LOG_RUNS },
+  ]).toArray();
+  return {
+    runs: runs.map((r) => {
+      const statuses = r.tables.map((x) => x.status);
+      const status = statuses.includes("failed") ? "failed" : statuses.includes("warning") ? "warning" : "success";
+      const last = r.tables[r.tables.length - 1];
+      const endedAt = last?.startedAt ? new Date(+new Date(last.startedAt) + (last.durationMs || 0)) : null;
+      return { runId: r._id, startedAt: r.startedAt, endedAt, status, tables: r.tables,
+               rowsRead: r.tables.reduce((n, x) => n + (x.rowsRead || 0), 0) };
+    }),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 // ---------------------------------------------------------------- request handling
 
 /** Runs one request ({ dataset } or { collection, pipeline }) for a signed-in user. */
@@ -1105,6 +1138,7 @@ export async function runRequest(body, user) {
   if (body.dataset === "me") { if (body.login === true) await recordLogin(user).catch((e) => console.error(e)); return user; }
   if (body.dataset === "users") { requireAdmin(user); return listUsers(); }
   if (body.dataset === "usage") return usageAnalytics(user);
+  if (body.dataset === "syncLog") return syncLog(user);
   if (body.action === "saveUser") return saveUser(body, user);
   if (body.action === "deleteUser") return deleteUser(body, user);
   if (body.action === "bulkSaveUsers") return bulkSaveUsers(body, user);
