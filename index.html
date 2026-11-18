@@ -668,6 +668,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>
       M&amp;R Operations
     </a>
+    <a href="https://connect.sarlogisolutions.com/login?sso=1" id="crmLink" target="_blank" rel="noopener noreferrer" aria-label="SAR Field CRM (opens in a new tab)">
+      <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#0f172a"/><text x="16" y="23" font-family="Arial, sans-serif" font-size="19" font-weight="800" fill="white" text-anchor="middle">S</text></svg>
+      SAR Field CRM
+    </a>
   </nav>
   <h4 class="hidden" id="adminHead">ADMIN</h4>
   <nav class="hidden" id="adminNav">
@@ -1709,6 +1713,9 @@ function showUser(me) {
   $("who").textContent = `${name} · ${me.role}`;
   $("meName").textContent = name; $("meName").title = me.email;
   $("avatar").textContent = (name.trim()[0] || "?").toUpperCase();
+  // SAR Field CRM link (no data-page, so the sidebar's click handler and route() leave it alone): signs this user into the CRM
+  const crmEmail = String(me.email || "").trim().toLowerCase();
+  $("crmLink").href = "https://connect.sarlogisolutions.com/login?sso=1" + (crmEmail ? `&email=${encodeURIComponent(crmEmail)}` : "");
 }
 function showSynced() {
   const when = state.lastSync
