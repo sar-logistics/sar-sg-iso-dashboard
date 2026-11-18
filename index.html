@@ -44,6 +44,11 @@
   .side nav a:hover { background: rgb(255 255 255 / .08); color: #fff; transform: translateX(2px); }
   .side nav a[aria-current="page"] { background: rgb(255 255 255 / .14); color: #fff; }
   .side nav a[aria-current="page"] svg { opacity: 1; }
+  /* SAR CRM link: no icon (empty slot keeps the label aligned), "opens elsewhere" arrow fades in on hover/focus */
+  .side nav #crmLink .crm-slot { width: 16px; height: 16px; flex: none; display: inline-block; }
+  .side nav #crmLink .crm-go { margin-left: auto; display: flex; flex: none; opacity: 0; transform: translateX(-4px); transition: opacity .18s, transform .18s; }
+  .side nav #crmLink:hover .crm-go, .side nav #crmLink:focus-visible .crm-go { opacity: .6; transform: none; }
+  .side nav #crmLink .crm-go svg { width: 12px; height: 12px; opacity: 1; }
   .perf-blank { padding: 80px 16px; text-align: center; font-size: 14px; color: var(--ink-soft); }
   .side nav .chev-btn { margin: -6px -6px -6px auto; padding: 9px 9px; border-radius: 6px; display: flex; }
   .side nav .chev-btn:hover { background: rgb(255 255 255 / .12); }
@@ -668,9 +673,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>
       M&amp;R Operations
     </a>
-    <a href="https://connecttrn.sarlogisolutions.com/login?sso=1" id="crmLink" target="_blank" rel="noopener noreferrer" aria-label="SAR Field CRM (opens in a new tab)">
-      <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#0f172a"/><text x="16" y="23" font-family="Arial, sans-serif" font-size="19" font-weight="800" fill="white" text-anchor="middle">S</text></svg>
-      SAR Field CRM
+    <a href="https://connecttrn.sarlogisolutions.com/login?sso=1" id="crmLink" target="_blank" rel="noopener noreferrer" aria-label="SAR CRM (opens in a new tab)">
+      <span class="crm-slot" aria-hidden="true"></span>
+      SAR CRM
+      <span class="crm-go"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></span>
     </a>
   </nav>
   <h4 class="hidden" id="adminHead">ADMIN</h4>
@@ -1713,7 +1719,7 @@ function showUser(me) {
   $("who").textContent = `${name} · ${me.role}`;
   $("meName").textContent = name; $("meName").title = me.email;
   $("avatar").textContent = (name.trim()[0] || "?").toUpperCase();
-  // SAR Field CRM link (no data-page, so the sidebar's click handler and route() leave it alone): signs this user into the CRM
+  // SAR CRM link (no data-page, so the sidebar's click handler and route() leave it alone): signs this user into the CRM
   const crmEmail = String(me.email || "").trim().toLowerCase();
   $("crmLink").href = "https://connecttrn.sarlogisolutions.com/login?sso=1" + (crmEmail ? `&email=${encodeURIComponent(crmEmail)}` : "");
 }
