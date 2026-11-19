@@ -244,6 +244,9 @@
   .pivot tfoot td.dim { background: var(--grand); z-index: 4; }
   .pivot tfoot tr.recon td, .pivot tfoot tr.recon td.dim { background: #F6F8FC; font-weight: 600; color: var(--ink-soft); }
   .pivot tfoot tr.grand-total td, .pivot tfoot tr.grand-total td.dim { background: #E4EBFA; }
+  .pivot tfoot tr.growth td, .pivot tfoot tr.growth td.dim { background: #fff; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+  .pivot tfoot tr.growth .up { color: #1F8A4C; }
+  .pivot tfoot tr.growth .down { color: #B42318; }
   tbody tr.recon td { background: #F6F8FC; font-style: italic; color: var(--ink-soft); }
   .tg { width: 16px; height: 16px; padding: 0; margin-right: 8px; border: 0; border-radius: 4px; background: var(--grad); color: #fff;
         font: 700 12px/16px "Plus Jakarta Sans", sans-serif; vertical-align: -2px; }
@@ -2289,6 +2292,29 @@ function renderPivot() {
   if (nOther) {
     foot += footRow(`Other charges (${nOther} not selected)`, Object.assign(other, { label: "Other charges", filter: { notCharges: new Set(state.charges) } }), "recon");
     foot += footRow("Total — all charges", Object.assign(all, { label: "All charges", filter: { allCharges: true } }), "grand-total");
+  }
+  // Month-on-month growth of the bottom total row. The first month is compared with the month before the period
+  // (same charges), unless a search is active, since the search also narrows that month.
+  if (!weekly && pivotCols.length > 1) {
+    const base = nOther ? all : root, monthCols = pivotCols.filter((c) => !c.grand);
+    const before = (() => {
+      if (state.detailQ) return null;
+      const d = new Date(monthCols[0].m + "-01T00:00:00Z"); d.setUTCMonth(d.getUTCMonth() - 1);
+      const pm = d.toISOString().slice(0, 7);
+      const ls = state.lines.filter((l) => l.date.startsWith(pm) && (nOther || state.charges.has(l.charge)));
+      return ls.length ? ls.reduce((s, l) => s + l.amount, 0) : null;
+    })();
+    const pct = (cur, prev) => {
+      if (prev == null || !prev) return "";
+      const g = (cur - prev) / Math.abs(prev) * 100;
+      return `<span class="${g >= 0 ? "up" : "down"}" title="${money(prev)} → ${money(cur)}">${g >= 0 ? "▲ +" : "▼ −"}${Math.abs(g).toFixed(1)}%</span>`;
+    };
+    let prev = before;
+    foot += `<tr class="growth"><td class="dim last" style="${CHARGE_COL}">Revenue growth (month on month)</td>${pivotCols.map((c) => {
+      if (c.grand) return '<td class="gt"></td>';
+      const cur = base.cells[c.key] || 0, out = pct(cur, prev); prev = cur;
+      return `<td class="mtot">${out || '<span class="blank">–</span>'}</td>`;
+    }).join("")}</tr>`;
   }
 
   $("detailTable").className = "pivot";
