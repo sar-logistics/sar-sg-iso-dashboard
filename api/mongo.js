@@ -10,6 +10,7 @@
 //                    onAccount: number = amount received / paid on account, null = clear and use SARFD's figure)
 //   POST /api/mongo  { dataset: "me" }    -> { email, name, role }        (signed in; login: true also records a sign-in)
 //   POST /api/mongo  { dataset: "usage" } -> sign-in stats per user + logins per day  (admins)
+//   POST /api/mongo  { dataset: "syncLog" } -> recent SARFD sync runs with their per-table results  (admins)
 //   POST /api/mongo  { collection, pipeline } -> read-only aggregate      (signed in)
 //   POST /api/mongo  { dataset: "users" }                 -> users with access     (admins)
 //   POST /api/mongo  { action: "saveUser", email, name, role, disabled, create } -> users  (admins)
@@ -451,9 +452,9 @@ async function mrDataset() {
 // ---------------------------------------------------------------- Tank Utilisation dataset
 //
 // Per tank: its movement history (idle / working days) and the revenue and cost billed to it, only from SARFD:
-//   movements     tblContainerMovement (rows with a deletedNo left out), each activity given a state:
-//                 idle = empty at a depot (available, back from consignee, cleaning, survey, repair, on hire …),
-//                 reposition = empty on the move, working = allocated / laden / with consignee / sub-leased, off = OFF HIRE
+//   movements     tblContainerMovement (rows with a deletedNo left out), each activity given the Tank Status from the
+//                 user's activity list (TANK_STATUS): Idle (the user's Depot In), every other status = utilised by the customer,
+//                 OFF HIRE = back with the lessor (not counted). Activities not on the list count as utilised, with no status.
 //   lease         tblContainerTransaction On Hire / Off Hire rows: lessor, daily rate, pick-up date
 //   revenue       tblInvoice Principal Sales, Sub Lease, M&R Sales invoices; Principal Credit Notes negative
 //   cost          tblInvoice Purchase Invoice Container Wise (lease rent, storage, cleaning, repair, lift on/off …)
@@ -466,36 +467,55 @@ async function mrDataset() {
 //      equal to the number of tanks (per-tank rate), is exact; anything else is split equally and marked "split"
 //   3. no container rows and no BL tanks → unassigned (counted in the totals, not on any tank)
 // Amounts are chargeTotalAmountHc / detailAmountHc (USD). Both SAR companies, every date (from Mar 2025).
-const TANK_SNAPSHOT_ID = "tank-utilisation-v1";
-const TANK_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblInvoice", "tblBL"];
+const TANK_SNAPSHOT_ID = "tank-utilisation-v5";
+const TANK_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblInvoice", "tblBL", "tblJob"];
 const TANK_VOUCHERS = { PSI: "rev", SLI: "rev", MRI: "rev", CN: "rev", PICI: "cost", PI: "cost" };
-const TANK_STATE = {
-  idle: ["EMPTY AVAILABLE", "EMPTY RECEIVED FROM CONSIGNEE", "EMPTY RETURN BY SHIPPER", "DEPOT EMPTY IN", "PORT TO DEPOT EMPTY",
-         "WASHING/ UNDER CLEANING", "SURVEY", "UNDER REPAIR", "ON HIRE", "SUB LEASE OFF HIRE", "INTERNAL TERMINAL/ICD/DEPOT TRANSFER"],
-  reposition: ["LOADED EMPTY", "GATE IN PORT EMPTY", "IMPORT DISCHARGE EMPTY", "DEPOT TO PORT EMPTY"],
-  off: ["OFF HIRE"],
+// Activity -> Tank Status, as given by the user (30 Oct 2026). Idle (the user's Depot In) is the only idle status.
+const TANK_STATUS = {
+  "EMPTY AVAILABLE": "Idle", "SURVEY": "Idle", "WASHING/ UNDER CLEANING": "Idle",
+  "EMPTY ALLOCATED TO SHIPPER": "Idle", "UNDER REPAIR": "Idle",
+  "SENT TO CONSIGNEE": "With Consignee", "EMPTY DIRTY PICKED UP BY CONSIGNEE": "With Consignee",
+  "SUB LEASE ON HIRE": "Sub Lease on Hire", "LOADED FULL": "In Transit", "LOADED EMPTY": "In Transit",
+  "OUT TO SHIPPER": "With Shipper", "GATE IN PORT LADEN": "Gate in Port Laden",
+  "INTERNAL TERMINAL/ICD/DEPOT TRANSFER": "Depot Transfer", "DEPOT TO PORT EMPTY": "Depot to Port Empty",
 };
+const tankStatus = (activity) => TANK_STATUS[s(activity).toUpperCase()] || "";
 const tankState = (activity) => {
   const a = s(activity).toUpperCase();
-  for (const [st, list] of Object.entries(TANK_STATE)) if (list.includes(a)) return st;
-  return "working";   // allocated to shipper, out to shipper, laden moves, sent to consignee, rail, sub lease on hire …
+  if (a === OFF_HIRE_ACTIVITY) return "off";
+  return TANK_STATUS[a] === "Idle" ? "idle" : "working";
 };
 const TANK_RE = /[A-Z]{4}\d{7}/g;
 
 async function buildTankStatus(db, lastSync) {
-  const [moves, txns, inv, bls] = await Promise.all([
+  const [moves, txns, inv, bls, blHeads, jobs] = await Promise.all([
     db.collection("tblContainerMovement").find({ deletedNo: { $exists: false } }, { projection: { _id: 0, containerNo: 1, containerMovementId: 1,
-      activityDate: 1, activityName: 1, toLocationName: 1, agentName: 1, sizeName: 1, typeName: 1 } }).toArray(),
+      activityDate: 1, activityName: 1, toLocationName: 1, agentName: 1, sizeName: 1, typeName: 1, importBlNo: 1, exportBlNo: 1, jobNo: 1 } }).toArray(),
     db.collection("tblContainerTransaction").find({ pageTypeName: { $in: ["On Hire", "Off Hire"] } }, { projection: { _id: 0,
       detailContainerNo: 1, pageTypeName: 1, partyName: 1, detailRate: 1, detailPickUpDate: 1, containerTransactionDate: 1 } }).toArray(),
     db.collection("tblInvoice").find({ recordType: { $in: ["H", "C", "D"] }, voucherCode: { $in: Object.keys(TANK_VOUCHERS) }, invoiceNo: { $not: /^PRO/i } },
       { projection: { _id: 0, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, recordType: 1, chargeName: 1, chargeQuantity: 1,
         chargeTotalAmountHc: 1, detailContainerNo: 1, detailAmountHc: 1, containerNos: 1, blNo: 1, jobNo: 1 } }).toArray(),
     db.collection("tblBL").find({ recordType: "D", container_containerNo: { $nin: [null, ""] } }, { projection: { _id: 0, blNo: 1, container_containerNo: 1 } }).toArray(),
+    db.collection("tblBL").find({ recordType: "H", deletedNo: { $exists: false } }, { projection: { _id: 0, blNo: 1, hblNo: 1, polName: 1, podName: 1 } }).toArray(),
+    db.collection("tblJob").find({}, { projection: { _id: 0, jobNo: 1, polName: 1, podName: 1 } }).toArray(),
   ]);
+  // POL / POD of a movement (tblContainerMovement has none): its import / export BL in tblBL, else its job in tblJob.
+  // A BL or job number that SARFD has more than once with different ports gives no POL / POD (no guessing).
+  const portsBy = (rows, keys) => {
+    const m = new Map();
+    for (const r of rows) for (const k of keys(r)) {
+      const v = `${s(r.polName)}|${s(r.podName)}`; if (v === "|") continue;
+      m.set(k, m.has(k) && m.get(k) !== v ? null : v);
+    }
+    return m;
+  };
+  const blPorts = portsBy(blHeads, (b) => [...new Set([s(b.blNo).toUpperCase(), s(b.hblNo).toUpperCase()].filter(Boolean))]);
+  const jobPorts = portsBy(jobs, (j) => (s(j.jobNo) ? [s(j.jobNo)] : []));
+  const movePorts = (m) => (blPorts.get(s(m.importBlNo).toUpperCase()) || blPorts.get(s(m.exportBlNo).toUpperCase()) || jobPorts.get(s(m.jobNo)) || "|").split("|");
   const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
   const r2 = (v) => Math.round(v * 100) / 100;
-  const tanks = new Map();   // tank no -> { c, size, type, moves: [[date, activity, state, location, agent]], lease, lines: [] }
+  const tanks = new Map();   // tank no -> { c, size, type, moves: [[date, activity, state, location, agent, tank status, pol, pod]], lease, lines: [] }
   const tank = (c) => { let t = tanks.get(c); if (!t) tanks.set(c, t = { c, size: "", type: "", moves: [], lease: null, lines: [] }); return t; };
 
   // movement history, oldest first
@@ -504,7 +524,7 @@ async function buildTankStatus(db, lastSync) {
     const c = s(m.containerNo).toUpperCase(), d = day(m.activityDate); if (!c || !d) continue;
     const t = tank(c);
     t.size = s(m.sizeName) || t.size; t.type = s(m.typeName) || t.type;
-    t.moves.push([d, s(m.activityName), tankState(m.activityName), s(m.toLocationName), s(m.agentName)]);
+    t.moves.push([d, s(m.activityName), tankState(m.activityName), s(m.toLocationName), s(m.agentName), tankStatus(m.activityName), ...movePorts(m)]);
   }
   // lease: the latest On Hire (lessor, daily rate, pick-up) and any Off Hire after it
   for (const x of txns) {
@@ -563,19 +583,22 @@ async function buildTankStatus(db, lastSync) {
       for (const c of ts) put(c, ch, amt / ts.length, how);
     }
   }
-  const out = [...tanks.values()].filter((t) => t.moves.length || t.lines.length);
+  // tanks whose latest movement is OFF HIRE are back with the lessor: left out of the report (user, 30 Oct 2026)
+  const isOff = (t) => t.moves.length && t.moves[t.moves.length - 1][2] === "off";
+  const offHire = [...tanks.values()].filter(isOff).length;
+  const out = [...tanks.values()].filter((t) => !isOff(t) && (t.moves.length || t.lines.length));
   for (const t of out) t.lines.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   // Repeated text (activity, location, agent, charge, BL / job) goes into one word list and rows carry its index,
   // so the response stays under Vercel's 4.5 MB limit; the page expands it back (tuExpand in index.html).
   const words = [], wordIx = new Map();
   const w = (v) => { let i = wordIx.get(v); if (i === undefined) { i = words.length; words.push(v); wordIx.set(v, i); } return i; };
   for (const t of out) {
-    t.moves = t.moves.map(([d, a, st, loc, ag]) => [d, w(a), st[0], w(loc), w(ag)]);   // state: i(dle) w(orking) r(eposition) o(ff)
+    t.moves = t.moves.map(([d, a, st, loc, ag, ts, pol, pod]) => [d, w(a), st[0], w(loc), w(ag), w(ts), w(pol), w(pod)]);   // state: i(dle) w(orking: utilised) o(ff)
     t.lines = t.lines.map(([d, k, v, no, ch, amt, how, ref]) => [d, k === "rev" ? 1 : 0, v, no, w(ch), amt, how === "e" ? 1 : 0, w(ref)]);
   }
   const top = [...unBy].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 15).map(([k, v]) => [...k.split("|"), r2(v)]);
   return { words, tanks: out, unassigned: { rev: r2(unassigned.rev), cost: r2(unassigned.cost), lines: unassigned.lines, top },
-           assigned: { exact, split }, lastSync, generatedAt: new Date().toISOString() };
+           assigned: { exact, split }, offHire, lastSync, generatedAt: new Date().toISOString() };
 }
 
 async function tankStatusDataset() {
@@ -1067,6 +1090,38 @@ async function usageAnalytics(user) {
   };
 }
 
+// ---------------------------------------------------------------- dashboard log
+// sarfd_sync.py writes one sarfdSyncHistory row per table per run (and one "(connection check)"
+// row when a run stops before loading anything). Admins see the latest runs, newest first.
+
+const SYNC_LOG_RUNS = 40;
+
+async function syncLog(user) {
+  requireAdmin(user);
+  const db = await getDb();
+  const runs = await db.collection("sarfdSyncHistory").aggregate([
+    { $sort: { startedAt: 1 } },
+    { $group: {
+        _id: "$runId", startedAt: { $min: "$startedAt" },
+        tables: { $push: { table: "$table", startedAt: "$startedAt", status: "$status", rowsRead: "$rowsRead",
+                           rowsInserted: "$rowsInserted", sheetStatus: "$sheetStatus", sheetRows: "$sheetRows",
+                           durationMs: "$durationMs", error: "$error", sheetError: "$sheetError" } } } },
+    { $sort: { startedAt: -1 } },
+    { $limit: SYNC_LOG_RUNS },
+  ]).toArray();
+  return {
+    runs: runs.map((r) => {
+      const statuses = r.tables.map((x) => x.status);
+      const status = statuses.includes("failed") ? "failed" : statuses.includes("warning") ? "warning" : "success";
+      const last = r.tables[r.tables.length - 1];
+      const endedAt = last?.startedAt ? new Date(+new Date(last.startedAt) + (last.durationMs || 0)) : null;
+      return { runId: r._id, startedAt: r.startedAt, endedAt, status, tables: r.tables,
+               rowsRead: r.tables.reduce((n, x) => n + (x.rowsRead || 0), 0) };
+    }),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 // ---------------------------------------------------------------- request handling
 
 /** Runs one request ({ dataset } or { collection, pipeline }) for a signed-in user. */
@@ -1083,6 +1138,7 @@ export async function runRequest(body, user) {
   if (body.dataset === "me") { if (body.login === true) await recordLogin(user).catch((e) => console.error(e)); return user; }
   if (body.dataset === "users") { requireAdmin(user); return listUsers(); }
   if (body.dataset === "usage") return usageAnalytics(user);
+  if (body.dataset === "syncLog") return syncLog(user);
   if (body.action === "saveUser") return saveUser(body, user);
   if (body.action === "deleteUser") return deleteUser(body, user);
   if (body.action === "bulkSaveUsers") return bulkSaveUsers(body, user);
