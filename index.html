@@ -3453,7 +3453,16 @@ function renderTu() {
   // fleet Grand Total rows at the top
   const all = { m: {}, fleet, idle, work: sum("work"), rev, cost };
   for (const f of ["idle", "work", "rev", "cost"]) all.m[f] = Object.fromEntries(ms.map((mo) => [mo, rows.reduce((a, r) => a + r.m[f][mo], 0)]));
-  let body = TU_MEASURES.map(([k, h], i) => row(`gt1${i === TU_MEASURES.length - 1 ? " gt0" : ""}`, `<td class="nm">${h}</td>`, cells(all, k))).join("");
+  const gtRows = TU_MEASURES.map(([k, h], i) => row(`gt1${i === TU_MEASURES.length - 1 ? " gt0" : ""}`, `<td class="nm">${h}</td>`, cells(all, k)));
+  // average idle days per tank: idle days ÷ tanks in the fleet (with idle or utilised days) in the range / that month
+  const avgIdle = (mo) => {
+    const n = rows.filter((r) => (mo ? r.m.idle[mo] + r.m.work[mo] : r.fleet) > 0).length, d = mo ? all.m.idle[mo] : all.idle;
+    return n ? (d / n).toFixed(1) : dash;
+  };
+  gtRows.splice(TU_MEASURES.findIndex(([k]) => k === "idle") + 1, 0,
+    row("gt1", '<td class="nm" title="Idle days ÷ tanks in the fleet (in the range, or in that month)">Avg Idle Days per Tank</td>',
+      [`<td class="gt">${avgIdle("")}</td>`, ms.map((mo) => `<td>${avgIdle(mo)}</td>`).join("")]));
+  let body = gtRows.join("");
   for (const r of rows.slice(0, 1500)) {
     const open = tu.open.has(r.c), tip = [r.lessor && `Lessor ${r.lessor}`, r.rate != null && `$${r.rate}/day`, r.last[1] && `Now: ${r.last[1]} at ${r.last[3] || "—"} since ${shortDate(r.last[0])}`].filter(Boolean).join(" · ");
     body += row("", `<td class="nm" title="${esc(tip)}"><button class="tg" data-tg="${esc(r.c)}" aria-expanded="${open}">${open ? "−" : "+"}</button>`
