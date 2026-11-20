@@ -3419,7 +3419,8 @@ function tuRows() {
   return rows;
 }
 // rows shown under each tank (and in the Grand Total block): k = monthly field, utilisation % is worked out from the days
-const TU_MEASURES = [["pct", "Utilisation %"], ["work", "Utilised Days"], ["idle", "Idle Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Gross Profit (USD)"]];
+const TU_MEASURES = [["pct", "Utilisation %"], ["work", "Utilised Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Gross Profit (USD)"]];
+const TU_TANK_MORE = TU_MEASURES.filter(([k]) => !["pct", "work"].includes(k));   // under a tank's + (Utilised Days is always shown)
 function renderTu() {
   if (!tu.data) return;
   const rows = tuRows(), ms = monthsBetween(tu.from, tu.to), dash = '<span class="dash">—</span>';
@@ -3434,7 +3435,7 @@ function renderTu() {
     + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
     + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
     + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
-  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % by month, lowest first — + for utilised days, idle days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % and utilised days by month, lowest utilisation first — + for revenue, cost and gross profit; click a number for its detail, a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
   const val = (r, k, mo) => {
@@ -3453,8 +3454,8 @@ function renderTu() {
   // fleet Grand Total rows at the top
   const all = { m: {}, fleet, idle, work: sum("work"), rev, cost };
   for (const f of ["idle", "work", "rev", "cost"]) all.m[f] = Object.fromEntries(ms.map((mo) => [mo, rows.reduce((a, r) => a + r.m[f][mo], 0)]));
-  // the Grand Total block leaves out Utilised Days and Idle Days (still under each tank's +)
-  const gtMeasures = TU_MEASURES.filter(([k]) => k !== "work" && k !== "idle");
+  // the Grand Total block leaves out Utilised Days (shown under each tank)
+  const gtMeasures = TU_MEASURES.filter(([k]) => k !== "work");
   const gtRows = gtMeasures.map(([k, h], i) => row(`gt1${i === gtMeasures.length - 1 ? " gt0" : ""}`, `<td class="nm">${h}</td>`, cells(all, k)));
   // average utilised days per tank: utilised days ÷ tanks in the fleet (with idle or utilised days) in the range / that month
   const avgWork = (mo) => {
@@ -3469,7 +3470,8 @@ function renderTu() {
     const open = tu.open.has(r.c), tip = [r.lessor && `Lessor ${r.lessor}`, r.rate != null && `$${r.rate}/day`, r.last[1] && `Now: ${r.last[1]} at ${r.last[3] || "—"} since ${shortDate(r.last[0])}`].filter(Boolean).join(" · ");
     body += row("", `<td class="nm" title="${esc(tip)}"><button class="tg" data-tg="${esc(r.c)}" aria-expanded="${open}">${open ? "−" : "+"}</button>`
       + `<button class="num tk" data-c="${esc(r.c)}">${esc(r.c)}</button>${r.split ? " *" : ""}<span class="tu-now ${r.last[2] || ""}">${r.last[2] ? esc(r.last[5] || TU_STATE[r.last[2]]) : ""}</span></td>`, cells(r, "pct"));
-    if (open) for (const [k, h] of TU_MEASURES.slice(1)) body += row("sub", `<td class="nm">${h}</td>`, cells(r, k));
+    body += row("sub", '<td class="nm">Utilised Days</td>', cells(r, "work"));   // always shown under the tank
+    if (open) for (const [k, h] of TU_TANK_MORE) body += row("sub", `<td class="nm">${h}</td>`, cells(r, k));
   }
   if (!rows.length) body += `<tr><td colspan="${ms.length + 2}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`;
   $("tuTable").innerHTML = `<thead><tr><th class="nm">Tank No</th><th class="gt">Grand Total</th>${ms.map((mo) => `<th>${monthLabel(mo)}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
@@ -3532,8 +3534,8 @@ function openTank(c) {
     + `<td>${esc(p.activity)}</td><td>${p.loc ? esc(p.loc) : dash}</td><td>${p.agent ? esc(p.agent) : dash}</td></tr>`).join("");
   const lineRows = lines.map((l) => `<tr><td>${shortDate(l[0])}</td><td>${l[1] === "rev" ? "Revenue" : "Cost"}</td><td>${esc(TU_VOUCHER[l[2]] || l[2])}</td><td class="mono">${esc(l[3])}</td>`
     + `<td>${esc(l[4])}</td><td class="mono">${l[7] ? esc(l[7]) : dash}</td><td>${l[6] === "e" ? "Exact" : "Split"}</td><td class="amt mono${l[5] < 0 ? " neg" : ""}">${tuMoney(l[5])}</td></tr>`).join("");
-  $("uBody").innerHTML = `<div class="tu-sum">${stat("Days in fleet", n0(fleet))}${stat("Idle days", `${n0(days.idle)} (${fleet ? ((100 * days.idle) / fleet).toFixed(0) : 0}%)`)}`
-    + `${stat("Utilised days", n0(days.working))}${stat("Revenue", "$" + tuMoney(rev))}${stat("Cost", "$" + tuMoney(cost))}`
+  $("uBody").innerHTML = `<div class="tu-sum">${stat("Days in fleet", n0(fleet))}${stat("Utilised days", n0(days.working))}`
+    + `${stat("Utilisation %", `${fleet ? ((100 * days.working) / fleet).toFixed(0) : 0}%`)}${stat("Revenue", "$" + tuMoney(rev))}${stat("Cost", "$" + tuMoney(cost))}`
     + `${stat("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)))}</div>`
     + `<h4>Movements (latest first)</h4><table class="tank-table"><thead><tr><th>From</th><th>To</th><th class="amt">Days</th><th>Tank Status</th><th>Activity</th><th>Location</th><th>Agent</th></tr></thead>`
     + `<tbody>${perRows || '<tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8">No movements in these months</td></tr>'}</tbody></table>`
