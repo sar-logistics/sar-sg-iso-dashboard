@@ -283,7 +283,7 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v8";
+const MR_SNAPSHOT_ID = "mr-inventory-v10";
 const OFF_HIRE_ACTIVITY = "OFF HIRE";
 const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice", "tblContainerRepair"];
 
@@ -354,52 +354,79 @@ async function buildMr(db, lastSync) {
   return { tanks, offHire, depots, pending, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
 }
 
-// Billing pendency (M&R Operations): has the M&R team booked the depot cost for every time a tank came into a depot?
-// Depot entry = a tblContainerMovement row with one of PEND_ENTRY activities, from PEND_FROM on (user, 24 Nov 2026).
-// The M&R team books the cost by typing the Principal Approved Amount on the tank's work order in Syscon
-// (tblContainerRepair D row detailAmount). A work order belongs to an entry when it is for the same tank and dated from
-// 3 days before the entry up to the tank's next depot entry (work orders are sometimes dated a little before the movement).
-// Status: 0 = no work order, 1 = work order but Principal Approved Amount blank, 2 = booked.
-// Rows: [tank, depot, agent, entry date, import BL, entry activity, status, work orders, current activity].
+// Billing pendency (M&R Operations): is the depot cost booked for every time a tank came into a depot (from PEND_FROM)?
+// Depot stay = a tblContainerMovement row with a PEND_ENTRY activity up to the tank's next one. It carries the import BL it
+// arrived on, plus the export BL(s) it was next loaded on (the BL goes blank from EMPTY ALLOCATED TO SHIPPER until LOADED FULL).
+// Each work order (tblContainerRepair) joins one stay of its tank: the stay whose import / export BL equals the work order's
+// blNo (the latest such stay that started by the work-order date), else, with no BL match, the stay the tank was in on the
+// work-order date. Work orders are often dated after the tank moved on, so BL first, date second.
+// Booked = a joined work order has the Principal Approved Amount (detailAmount) filled, or the depot charges for that tank
+// were uploaded on a purchase invoice (PICI, not lease rent) during the stay and the stay has no work order.
+// Rows: [tank, depot, agent, entry date, import BL, entry activity, status, references, current activity]
+// status 0 = no work order, 1 = Principal Approved Amount blank, 2 = booked on work order, 3 = booked on purchase invoice.
 const PEND_ENTRY = ["EMPTY RECEIVED FROM CONSIGNEE", "PORT TO DEPOT EMPTY", "DEPOT EMPTY IN", "EMPTY RETURN BY SHIPPER"];
 const PEND_FROM = new Date("2026-01-01T00:00:00Z");
+const PEND_GRACE = 3 * 86400000;   // work orders / invoices are sometimes dated a little before the entry movement
 async function buildBillingPendency(db, tanks) {
-  const [entries, heads, lines] = await Promise.all([
-    db.collection("tblContainerMovement").find({ activityName: { $in: PEND_ENTRY }, deletedNo: { $exists: false } },
-      { projection: { _id: 0, containerNo: 1, activityName: 1, activityDate: 1, toLocationName: 1, agentName: 1, importBlNo: 1 } }).toArray(),
-    db.collection("tblContainerRepair").find({ recordType: "H" }, { projection: { _id: 0, containerRepairNo: 1, deletedNo: 1 } }).toArray(),
+  const U = (v) => s(v).toUpperCase();
+  const [moves, heads, lines, invs] = await Promise.all([
+    db.collection("tblContainerMovement").find({ deletedNo: { $exists: false } },
+      { projection: { _id: 0, containerNo: 1, activityName: 1, activityDate: 1, toLocationName: 1, agentName: 1, importBlNo: 1, exportBlNo: 1 } }).toArray(),
+    db.collection("tblContainerRepair").find({ recordType: "H" }, { projection: { _id: 0, containerRepairNo: 1, deletedNo: 1, blNo: 1 } }).toArray(),
     db.collection("tblContainerRepair").find({ recordType: "D" },
-      { projection: { _id: 0, containerRepairNo: 1, containerRepairDate: 1, containerNo: 1, detailAmount: 1, detailDeletedNo: 1 } }).toArray(),
+      { projection: { _id: 0, containerRepairNo: 1, containerRepairDate: 1, containerNo: 1, detailAmount: 1, detailDeletedNo: 1, blNo: 1 } }).toArray(),
+    db.collection("tblInvoice").find({ voucherCode: "PICI", recordType: "D", detailContainerNo: { $nin: [null, ""] }, chargeName: { $not: /LEASE RENT/i } },
+      { projection: { _id: 0, invoiceNo: 1, invoiceDate: 1, detailContainerNo: 1 } }).toArray(),
   ]);
-  const deleted = new Set(heads.filter((h) => h.deletedNo).map((h) => s(h.containerRepairNo)));
-  const wos = new Map();   // tank -> Map(work order -> { date, booked })
-  for (const l of lines) {
-    const c = s(l.containerNo).toUpperCase(), wo = s(l.containerRepairNo);
-    if (!c || !wo || !l.containerRepairDate || l.detailDeletedNo || deleted.has(wo)) continue;
-    if (!wos.has(c)) wos.set(c, new Map());
-    const w = wos.get(c).get(wo) || { wo, date: +new Date(l.containerRepairDate), booked: false };
-    if (l.detailAmount != null) w.booked = true;
-    wos.get(c).set(wo, w);
-  }
+  // depot stays per tank
   const byTank = new Map();
-  for (const e of entries) {
-    const c = s(e.containerNo).toUpperCase(); if (!c || !e.activityDate) continue;
-    if (!byTank.has(c)) byTank.set(c, []);
-    byTank.get(c).push(e);
+  for (const m of moves) { const c = U(m.containerNo); if (!c || !m.activityDate) continue; if (!byTank.has(c)) byTank.set(c, []); byTank.get(c).push(m); }
+  const stays = new Map();
+  for (const [c, ms] of byTank) {
+    ms.sort((a, b) => new Date(a.activityDate) - new Date(b.activityDate));
+    const list = [];
+    for (const m of ms) {
+      if (PEND_ENTRY.includes(s(m.activityName).toUpperCase())) {
+        const imp = U(m.importBlNo);
+        list.push({ m, date: +new Date(m.activityDate), imp, bls: new Set(imp ? [imp] : []), wos: new Map(), invs: new Set() });
+      } else if (list.length && U(m.exportBlNo)) list[list.length - 1].bls.add(U(m.exportBlNo));
+    }
+    if (list.length) stays.set(c, list);
   }
-  const now = Date.now(), grace = 3 * 86400000, current = new Map(tanks.map((t) => [t.c.toUpperCase(), t.activity]));
+  const stayAt = (list, t) => { let x = null; for (const st of list) if (st.date <= t + PEND_GRACE) x = st; return x; };
+  // work orders -> one stay each
+  const head = new Map(heads.map((h) => [s(h.containerRepairNo), h]));
+  const wos = new Map();
+  for (const l of lines) {
+    const c = U(l.containerNo), wo = s(l.containerRepairNo), h = head.get(wo);
+    if (!c || !wo || !l.containerRepairDate || l.detailDeletedNo || h?.deletedNo) continue;
+    const k = c + "|" + wo, w = wos.get(k) || { c, wo, date: +new Date(l.containerRepairDate), bls: new Set(), booked: false };
+    for (const b of [l.blNo, h?.blNo]) if (U(b)) w.bls.add(U(b));
+    if (l.detailAmount != null) w.booked = true;
+    wos.set(k, w);
+  }
+  for (const w of wos.values()) {
+    const list = stays.get(w.c); if (!list) continue;
+    const byBl = list.filter((st) => [...w.bls].some((b) => st.bls.has(b)));
+    const st = byBl.length ? stayAt(byBl, w.date) || byBl[0] : stayAt(list, w.date);
+    if (st) st.wos.set(w.wo, w);
+  }
+  // depot charges uploaded on a purchase invoice: the stay the tank was in on the invoice date
+  for (const v of invs) {
+    if (!v.invoiceDate) continue;
+    for (const c of String(v.detailContainerNo).split(/[,;]/).map(U).filter(Boolean)) {
+      const st = stayAt(stays.get(c) || [], +new Date(v.invoiceDate)); if (st && v.invoiceNo) st.invs.add(s(String(v.invoiceNo)));
+    }
+  }
+  const current = new Map(tanks.map((t) => [t.c.toUpperCase(), t.activity]));
   const out = [];
-  for (const [c, es] of byTank) {
-    es.sort((a, b) => new Date(a.activityDate) - new Date(b.activityDate));
-    const tw = [...(wos.get(c)?.values() || [])];
-    es.forEach((e, i) => {
-      const from = +new Date(e.activityDate); if (from < +PEND_FROM) return;
-      const to = i + 1 < es.length ? +new Date(es[i + 1].activityDate) : now + 86400000;
-      const ws = tw.filter((w) => w.date >= from - grace && w.date < to).sort((a, b) => a.date - b.date);
-      const status = !ws.length ? 0 : ws.some((w) => w.booked) ? 2 : 1;
-      out.push([c, s(e.toLocationName) || "(No depot)", s(e.agentName), new Date(from).toISOString().slice(0, 10), s(e.importBlNo),
-        s(e.activityName), status, ws.map((w) => w.wo).join(", "), current.get(c) || "OFF HIRE"]);
-    });
+  for (const [c, list] of stays) for (const st of list) {
+    if (st.date < +PEND_FROM) continue;
+    const ws = [...st.wos.values()].sort((a, b) => a.date - b.date);
+    const status = ws.some((w) => w.booked) ? 2 : ws.length ? 1 : st.invs.size ? 3 : 0;   // a work order with the amount blank stays unbooked
+    const refs = status === 3 ? [...st.invs].join(", ") : ws.map((w) => w.wo).join(", ");
+    out.push([c, s(st.m.toLocationName) || "(No depot)", s(st.m.agentName), new Date(st.date).toISOString().slice(0, 10), st.imp,
+      s(st.m.activityName), status, refs, current.get(c) || "OFF HIRE"]);
   }
   return out.sort((a, b) => (a[3] < b[3] ? 1 : a[3] > b[3] ? -1 : 0));
 }
