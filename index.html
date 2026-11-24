@@ -1080,7 +1080,6 @@
       <div class="tools" style="justify-content:space-between">
         <div><h2>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
         <div class="tools" style="margin:0">
-          <input class="search" id="mrDepotSearch" placeholder="Search depot or agent…">
           <button class="btn" id="mrDepotToggleAll">Expand all</button>
           <button class="btn" id="mrDepotXlsx">Export to Excel</button>
         </div>
@@ -1094,7 +1093,6 @@
       <div class="tools" style="justify-content:space-between">
         <div><h2>Billing Pendency</h2><p class="sub" style="margin-bottom:0" id="mrPendSub"></p></div>
         <div class="tools" style="margin:0">
-          <input class="search" id="mrPendSearch" placeholder="Search depot, tank, BL or work order…">
           <button class="btn" id="mrPendToggleAll">Expand all</button>
           <button class="btn" id="mrPendXlsx">Export to Excel</button>
         </div>
@@ -2673,7 +2671,6 @@ function renderPending() {
     + "or the depot charges were uploaded on a purchase invoice (PICI) during the visit. Month columns = unbooked entries by entry month. "
     + "Click a number to see the tanks.";
 }
-$("mrPendSearch").oninput = (e) => { mr.pendQ = e.target.value; renderPending(); };
 $("mrPendToggleAll").onclick = () => {
   const ds = [...new Set(pendLines().map((l) => l[PEND.depot]))];
   if (ds.length && ds.every((d) => mr.pendOpen.has(d))) mr.pendOpen.clear(); else for (const d of ds) mr.pendOpen.add(d);
@@ -2846,7 +2843,6 @@ function renderDepot() {
     <tbody>${body || '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
     <tfoot><tr><td>GRAND TOTAL</td><td></td><td>${n0(grand.total)}</td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}</tr></tfoot>`;
 }
-$("mrDepotSearch").oninput = (e) => { mr.depotQ = e.target.value; renderDepot(); };   // matching depots open while searching
 $("mrDepotToggleAll").onclick = () => {
   const ds = [...new Set(depotRows().map((r) => r.depot))];
   if (ds.length && ds.every((d) => mr.depotOpen.has(d))) mr.depotOpen.clear(); else for (const d of ds) mr.depotOpen.add(d);
