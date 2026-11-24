@@ -283,7 +283,7 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v7";
+const MR_SNAPSHOT_ID = "mr-inventory-v8";
 const OFF_HIRE_ACTIVITY = "OFF HIRE";
 const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice", "tblContainerRepair"];
 
@@ -354,34 +354,54 @@ async function buildMr(db, lastSync) {
   return { tanks, offHire, depots, pending, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
 }
 
-// Billing pendency (M&R Operations): lines of SARFD work orders (tblContainerRepair D rows) on tanks whose latest movement
-// is a Depot In status, where the work order's cost is not posted: no M&R purchase invoice (tblInvoice MRPI, whose Job No
-// carries the work order number). Amount = the principal amount (detailAmount) when SARFD has it, else rate × quantity
-// (1 when blank) × exchange rate, in the principal currency; lines without a principal currency use rate × quantity in the
-// line's own currency. Rows: [tank, depot, agent, work order, date, charge, currency, amount, activity].
+// Billing pendency (M&R Operations): has the M&R team booked the depot cost for every time a tank came into a depot?
+// Depot entry = a tblContainerMovement row with one of PEND_ENTRY activities, from PEND_FROM on (user, 24 Nov 2026).
+// The M&R team books the cost by typing the Principal Approved Amount on the tank's work order in Syscon
+// (tblContainerRepair D row detailAmount). A work order belongs to an entry when it is for the same tank and dated from
+// 3 days before the entry up to the tank's next depot entry (work orders are sometimes dated a little before the movement).
+// Status: 0 = no work order, 1 = work order but Principal Approved Amount blank, 2 = booked.
+// Rows: [tank, depot, agent, entry date, import BL, entry activity, status, work orders, current activity].
+const PEND_ENTRY = ["EMPTY RECEIVED FROM CONSIGNEE", "PORT TO DEPOT EMPTY", "DEPOT EMPTY IN", "EMPTY RETURN BY SHIPPER"];
+const PEND_FROM = new Date("2026-01-01T00:00:00Z");
 async function buildBillingPendency(db, tanks) {
-  const depotIn = new Map(tanks.filter((t) => TANK_STATUS[t.activity.toUpperCase()] === "Idle").map((t) => [t.c.toUpperCase(), t]));
-  const [heads, lines, posted] = await Promise.all([
-    db.collection("tblContainerRepair").find({ recordType: "H" }, { projection: { _id: 0, containerRepairNo: 1, currencyCode: 1, deletedNo: 1 } }).toArray(),
+  const [entries, heads, lines] = await Promise.all([
+    db.collection("tblContainerMovement").find({ activityName: { $in: PEND_ENTRY }, deletedNo: { $exists: false } },
+      { projection: { _id: 0, containerNo: 1, activityName: 1, activityDate: 1, toLocationName: 1, agentName: 1, importBlNo: 1 } }).toArray(),
+    db.collection("tblContainerRepair").find({ recordType: "H" }, { projection: { _id: 0, containerRepairNo: 1, deletedNo: 1 } }).toArray(),
     db.collection("tblContainerRepair").find({ recordType: "D" },
-      { projection: { _id: 0, containerRepairNo: 1, containerRepairDate: 1, containerNo: 1, depotName: 1, agentName: 1, detailChargeName: 1, detailRate: 1,
-        detailQuantity: 1, detailExchangeRate: 1, detailCurrencyCode: 1, detailPrincipalCurrencyCode: 1, detailAmount: 1, detailDeletedNo: 1 } }).toArray(),
-    db.collection("tblInvoice").distinct("jobNo", { voucherCode: "MRPI", recordType: "H" }),
+      { projection: { _id: 0, containerRepairNo: 1, containerRepairDate: 1, containerNo: 1, detailAmount: 1, detailDeletedNo: 1 } }).toArray(),
   ]);
-  const head = new Map(heads.map((h) => [s(h.containerRepairNo), h]));
-  const isPosted = new Set(posted.map((j) => s(j).toUpperCase()));
-  const out = [];
+  const deleted = new Set(heads.filter((h) => h.deletedNo).map((h) => s(h.containerRepairNo)));
+  const wos = new Map();   // tank -> Map(work order -> { date, booked })
   for (const l of lines) {
-    const t = depotIn.get(s(l.containerNo).toUpperCase()), wo = s(l.containerRepairNo), h = head.get(wo);
-    if (!t || l.detailDeletedNo || h?.deletedNo || isPosted.has(wo.toUpperCase())) continue;
-    const pc = s(l.detailPrincipalCurrencyCode);
-    const cur = pc || s(l.detailCurrencyCode) || s(h?.currencyCode) || "?";
-    // Amount = the principal amount only (user, 24 Nov); blank when SARFD has none, never derived from the rate.
-    const amt = pc && l.detailAmount != null ? Math.round(l.detailAmount * 100) / 100 : null;
-    out.push([t.c, s(l.depotName) || "(No depot)", s(l.agentName), wo, l.containerRepairDate ? new Date(l.containerRepairDate).toISOString().slice(0, 10) : "",
-      s(l.detailChargeName), cur, amt, t.activity]);
+    const c = s(l.containerNo).toUpperCase(), wo = s(l.containerRepairNo);
+    if (!c || !wo || !l.containerRepairDate || l.detailDeletedNo || deleted.has(wo)) continue;
+    if (!wos.has(c)) wos.set(c, new Map());
+    const w = wos.get(c).get(wo) || { wo, date: +new Date(l.containerRepairDate), booked: false };
+    if (l.detailAmount != null) w.booked = true;
+    wos.get(c).set(wo, w);
   }
-  return out.sort((a, b) => (a[4] < b[4] ? 1 : a[4] > b[4] ? -1 : 0));
+  const byTank = new Map();
+  for (const e of entries) {
+    const c = s(e.containerNo).toUpperCase(); if (!c || !e.activityDate) continue;
+    if (!byTank.has(c)) byTank.set(c, []);
+    byTank.get(c).push(e);
+  }
+  const now = Date.now(), grace = 3 * 86400000, current = new Map(tanks.map((t) => [t.c.toUpperCase(), t.activity]));
+  const out = [];
+  for (const [c, es] of byTank) {
+    es.sort((a, b) => new Date(a.activityDate) - new Date(b.activityDate));
+    const tw = [...(wos.get(c)?.values() || [])];
+    es.forEach((e, i) => {
+      const from = +new Date(e.activityDate); if (from < +PEND_FROM) return;
+      const to = i + 1 < es.length ? +new Date(es[i + 1].activityDate) : now + 86400000;
+      const ws = tw.filter((w) => w.date >= from - grace && w.date < to).sort((a, b) => a.date - b.date);
+      const status = !ws.length ? 0 : ws.some((w) => w.booked) ? 2 : 1;
+      out.push([c, s(e.toLocationName) || "(No depot)", s(e.agentName), new Date(from).toISOString().slice(0, 10), s(e.importBlNo),
+        s(e.activityName), status, ws.map((w) => w.wo).join(", "), current.get(c) || "OFF HIRE"]);
+    });
+  }
+  return out.sort((a, b) => (a[3] < b[3] ? 1 : a[3] > b[3] ? -1 : 0));
 }
 
 // Depot details for the Tank Inventory report, all from SARFD (key = upper-cased depot / location name):
