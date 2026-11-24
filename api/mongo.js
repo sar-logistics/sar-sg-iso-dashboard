@@ -283,7 +283,7 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v6";
+const MR_SNAPSHOT_ID = "mr-inventory-v7";
 const OFF_HIRE_ACTIVITY = "OFF HIRE";
 const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice", "tblContainerRepair"];
 
@@ -376,8 +376,8 @@ async function buildBillingPendency(db, tanks) {
     if (!t || l.detailDeletedNo || h?.deletedNo || isPosted.has(wo.toUpperCase())) continue;
     const pc = s(l.detailPrincipalCurrencyCode);
     const cur = pc || s(l.detailCurrencyCode) || s(h?.currencyCode) || "?";
-    const amt = Math.round((pc && l.detailAmount != null ? l.detailAmount
-      : (l.detailRate ?? 0) * (l.detailQuantity || 1) * (pc ? l.detailExchangeRate || 1 : 1)) * 100) / 100;
+    // Amount = the principal amount only (user, 24 Nov); blank when SARFD has none, never derived from the rate.
+    const amt = pc && l.detailAmount != null ? Math.round(l.detailAmount * 100) / 100 : null;
     out.push([t.c, s(l.depotName) || "(No depot)", s(l.agentName), wo, l.containerRepairDate ? new Date(l.containerRepairDate).toISOString().slice(0, 10) : "",
       s(l.detailChargeName), cur, amt, t.activity]);
   }
