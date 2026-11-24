@@ -687,8 +687,13 @@
     </a>
     <a href="/" data-page="mr">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>
-      M&amp;R Operations
+      M&amp;R Operations<span class="chev-btn" role="button" tabindex="0" aria-label="Show or hide the M&amp;R reports" title="Show / hide"><span class="chev" aria-hidden="true"></span></span>
     </a>
+    <div class="subnav hidden" id="mrNavSub">
+      <a href="/" class="sub" data-page="mr" data-sec="mrDetailsCard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/></svg>Inventory Details</a>
+      <a href="/" class="sub" data-page="mr" data-sec="mrDepotCard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>Depot Report</a>
+      <a href="/" class="sub" data-page="mr" data-sec="mrPendCard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Billing Pendency</a>
+    </div>
     <a href="https://connecttrn.sarlogisolutions.com/login?sso=1" id="crmLink" target="_blank" rel="noopener noreferrer" aria-label="SAR CRM (opens in a new tab)">
       <span class="crm-slot" aria-hidden="true"></span>
       SAR CRM
@@ -1752,13 +1757,13 @@ new ResizeObserver(syncTopbarH).observe($("topbar"));
 addEventListener("resize", syncTopbarH);
 function openMenu() { $("side").classList.add("open"); $("backdrop").classList.remove("hidden"); }
 $("sideNav").addEventListener("keydown", (e) => {
-  if ((e.key === "Enter" || e.key === " ") && e.target.closest(".chev-btn")) { e.preventDefault(); e.stopPropagation(); perfOpen = !perfOpen; markPerfSub(); }
+  if ((e.key === "Enter" || e.key === " ") && e.target.closest(".chev-btn")) { e.preventDefault(); e.stopPropagation(); toggleSub(e.target); }
 });
 function closeMenu() { $("side").classList.remove("open"); $("backdrop").classList.add("hidden"); }
 $("menuBtn").onclick = openMenu;
 $("backdrop").onclick = closeMenu;
 for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
-  if (e.target.closest(".chev-btn")) { e.preventDefault(); perfOpen = !perfOpen; markPerfSub(); return; }   // arrow: only show / hide the sub-items
+  if (e.target.closest(".chev-btn")) { e.preventDefault(); toggleSub(e.target); return; }   // arrow: only show / hide the sub-items
   const a = e.target.closest("a[data-page]"); if (!a) return;
   e.preventDefault();
   const perf = a.dataset.page === "sales";
@@ -1767,17 +1772,39 @@ for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
   } else if (perf) {   // Performance itself: Billing Details, sub-items shown
     Object.assign(state, { detail: "billing", mode: "table", detailQ: "", detailAll: false }); $("detailSearch").value = ""; perfOpen = true;
   }
+  if (a.dataset.page === "mr") { mrOpen = true; mrSec = a.dataset.sec || ""; }
   route(a.dataset.page);
+  if (a.dataset.sec) openMrSection(a.dataset.sec);
   if (perf && state.lines.length) render();
   if (a.dataset.detail) $("tableView").scrollIntoView({ behavior: "smooth", block: "start" });
 };
 // Billing Details / Agent Detail / Trade Lane Detail sit under Performance in the sidebar (table view only).
 let perfOpen = true;    // Performance opens first with its sub-items shown; the arrow next to Performance shows / hides them
+// Inventory Details / Depot Report / Billing Pendency sit under M&R Operations the same way: a sub-item opens that section and scrolls to it.
+let mrOpen = false, mrSec = "";
+function toggleSub(el) {
+  if (el.closest('a[data-page="mr"]')) mrOpen = !mrOpen; else perfOpen = !perfOpen;
+  markPerfSub();
+}
+function openMrSection(id) {
+  const card = $(id); if (!card) return;
+  card.classList.remove("sec-collapsed"); card.querySelector(".sec-tg")?.setAttribute("aria-expanded", "true");
+  if (id === "mrDetailsCard" && mr.data) renderInventory();   // the chart needs a visible box
+  requestAnimationFrame(() => {   // land below the sticky top bar and KPI row
+    const top = $("topbar").getBoundingClientRect().height + ($("mrKpis").offsetParent && getComputedStyle($("mrKpis")).position === "sticky" ? $("mrKpis").getBoundingClientRect().height : 0);
+    scrollTo({ top: card.getBoundingClientRect().top + scrollY - top - 12, behavior: "smooth" });
+  });
+}
 function markPerfSub(page = currentPage) {
   $("perfSub").classList.toggle("hidden", !perfOpen);
+  $("mrNavSub").classList.toggle("hidden", !mrOpen);
   document.querySelector('.side nav a[data-page="sales"]:not(.sub)').setAttribute("aria-expanded", perfOpen);
-  for (const a of document.querySelectorAll(".side nav a.sub"))
-    if (page === "sales" && state.mode === "table" && a.dataset.detail === state.detail) a.setAttribute("aria-current", "true"); else a.removeAttribute("aria-current");
+  document.querySelector('.side nav a[data-page="mr"]:not(.sub)').setAttribute("aria-expanded", mrOpen);
+  for (const a of document.querySelectorAll(".side nav a.sub")) {
+    const on = a.dataset.page === "sales" ? page === "sales" && state.mode === "table" && a.dataset.detail === state.detail
+      : page === "mr" && !!mrSec && a.dataset.sec === mrSec;
+    if (on) a.setAttribute("aria-current", "true"); else a.removeAttribute("aria-current");
+  }
 }
 
 function showUser(me) {
