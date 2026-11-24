@@ -2627,10 +2627,10 @@ function renderMr() {
 // ---- Billing Pendency: every time a tank came into a depot (from 1 Jan 2026), has the M&R team booked the depot cost
 // (Principal Approved Amount on the work order)? mr.data.pending rows, one per depot entry:
 // [tank, depot, agent, entry date, import BL, entry activity, status, references, current activity]; status 0 no work order,
-// 1 Principal Approved Amount blank (both unbooked), 2 booked on work order, 3 booked on purchase invoice (references = work orders / invoices).
+// 1 Principal Approved blank (both unbooked), 2 booked on work order, 3 booked on purchase invoice (references = work orders / invoices).
 // Depot rows (+ opens the tanks) × entry months; month cells count unbooked entries.
 const PEND = { c: 0, depot: 1, agent: 2, date: 3, bl: 4, act: 5, st: 6, wo: 7, now: 8 };
-const PEND_ST = ["Unbooked — no work order", "Unbooked — Principal Approved Amount blank", "Booked — work order", "Booked — purchase invoice"];
+const PEND_ST = ["Unbooked — no work order", "Unbooked — Principal Approved blank", "Booked — work order", "Booked — purchase invoice"];
 function pendLines() {
   const q = mr.pendQ.trim().toLowerCase();
   return (mr.data?.pending || []).filter((l) => !q || [l[PEND.depot], l[PEND.c], l[PEND.bl], l[PEND.wo], l[PEND.agent]].some((v) => (v || "").toLowerCase().includes(q)));
@@ -2666,7 +2666,7 @@ function renderPending() {
     <tfoot><tr><td>GRAND TOTAL</td><td>${n0(tanks)} tanks</td>${nums(all, "")}</tr></tfoot>`;
   $("mrPendFoot").textContent = "Depot entry = a tank coming into a depot (SARFD tblContainerMovement: empty received from consignee, port to depot empty, "
     + "depot empty in, empty return by shipper) from 1 Jan 2026, with the import BL it came on. Booked = the tank's work order for that visit "
-    + "(tblContainerRepair, matched on the import / export BL, else the work-order date) has the Principal Approved Amount filled in, "
+    + "(tblContainerRepair, matched on the import / export BL, else the work-order date) has Principal Approved filled in, "
     + "or the depot charges were uploaded on a purchase invoice (PICI) during the visit. Month columns = unbooked entries by entry month. "
     + "Click a number to see the tanks.";
 }

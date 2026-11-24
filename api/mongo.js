@@ -283,7 +283,7 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v10";
+const MR_SNAPSHOT_ID = "mr-inventory-v11";
 const OFF_HIRE_ACTIVITY = "OFF HIRE";
 const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice", "tblContainerRepair"];
 
@@ -360,7 +360,7 @@ async function buildMr(db, lastSync) {
 // Each work order (tblContainerRepair) joins one stay of its tank: the stay whose import / export BL equals the work order's
 // blNo (the latest such stay that started by the work-order date), else, with no BL match, the stay the tank was in on the
 // work-order date. Work orders are often dated after the tank moved on, so BL first, date second.
-// Booked = a joined work order has the Principal Approved Amount (detailAmount) filled, or the depot charges for that tank
+// Booked = a joined work order has Syscon's Principal Approved filled (detailApprovedRate > 0), or the depot charges for that tank
 // were uploaded on a purchase invoice (PICI, not lease rent) during the stay and the stay has no work order.
 // Rows: [tank, depot, agent, entry date, import BL, entry activity, status, references, current activity]
 // status 0 = no work order, 1 = Principal Approved Amount blank, 2 = booked on work order, 3 = booked on purchase invoice.
@@ -374,7 +374,7 @@ async function buildBillingPendency(db, tanks) {
       { projection: { _id: 0, containerNo: 1, activityName: 1, activityDate: 1, toLocationName: 1, agentName: 1, importBlNo: 1, exportBlNo: 1 } }).toArray(),
     db.collection("tblContainerRepair").find({ recordType: "H" }, { projection: { _id: 0, containerRepairNo: 1, deletedNo: 1, blNo: 1 } }).toArray(),
     db.collection("tblContainerRepair").find({ recordType: "D" },
-      { projection: { _id: 0, containerRepairNo: 1, containerRepairDate: 1, containerNo: 1, detailAmount: 1, detailDeletedNo: 1, blNo: 1 } }).toArray(),
+      { projection: { _id: 0, containerRepairNo: 1, containerRepairDate: 1, containerNo: 1, detailApprovedRate: 1, detailDeletedNo: 1, blNo: 1 } }).toArray(),
     db.collection("tblInvoice").find({ voucherCode: "PICI", recordType: "D", detailContainerNo: { $nin: [null, ""] }, chargeName: { $not: /LEASE RENT/i } },
       { projection: { _id: 0, invoiceNo: 1, invoiceDate: 1, detailContainerNo: 1 } }).toArray(),
   ]);
@@ -402,7 +402,7 @@ async function buildBillingPendency(db, tanks) {
     if (!c || !wo || !l.containerRepairDate || l.detailDeletedNo || h?.deletedNo) continue;
     const k = c + "|" + wo, w = wos.get(k) || { c, wo, date: +new Date(l.containerRepairDate), bls: new Set(), booked: false };
     for (const b of [l.blNo, h?.blNo]) if (U(b)) w.bls.add(U(b));
-    if (l.detailAmount != null) w.booked = true;
+    if (l.detailApprovedRate > 0) w.booked = true;   // Syscon "Principal Approved" column (detailAmount is "Total Amount")
     wos.set(k, w);
   }
   for (const w of wos.values()) {
