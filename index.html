@@ -2599,10 +2599,11 @@ function renderMr() {
 
 // ---- Billing Pendency: every time a tank came into a depot (from 1 Jan 2026), has the M&R team booked the depot cost
 // (Principal Approved Amount on the work order)? mr.data.pending rows, one per depot entry:
-// [tank, depot, agent, entry date, import BL, entry activity, status (0 no work order, 1 amount blank, 2 booked), work orders, current activity].
-// Depot rows (+ opens the tanks) × entry months; month cells count entries whose cost is not booked.
+// [tank, depot, agent, entry date, import BL, entry activity, status, references, current activity]; status 0 no work order,
+// 1 Principal Approved Amount blank (both unbooked), 2 booked on work order, 3 booked on purchase invoice (references = work orders / invoices).
+// Depot rows (+ opens the tanks) × entry months; month cells count unbooked entries.
 const PEND = { c: 0, depot: 1, agent: 2, date: 3, bl: 4, act: 5, st: 6, wo: 7, now: 8 };
-const PEND_ST = ["No work order", "Principal Approved Amount blank", "Cost booked"];
+const PEND_ST = ["Unbooked — no work order", "Unbooked — Principal Approved Amount blank", "Booked — work order", "Booked — purchase invoice"];
 function pendLines() {
   const q = mr.pendQ.trim().toLowerCase();
   return (mr.data?.pending || []).filter((l) => !q || [l[PEND.depot], l[PEND.c], l[PEND.bl], l[PEND.wo], l[PEND.agent]].some((v) => (v || "").toLowerCase().includes(q)));
@@ -2610,17 +2611,16 @@ function pendLines() {
 const notBooked = (l) => l[PEND.st] < 2;
 const pendMonths = (ls) => [...new Set(ls.map((l) => l[PEND.date].slice(0, 7)))].filter(Boolean).sort();
 const groupBy = (ls, i) => { const m = new Map(); for (const l of ls) { if (!m.has(l[i])) m.set(l[i], []); m.get(l[i]).push(l); } return m; };
-const pendStats = (ls) => { const o = { all: ls.length, booked: 0, noWo: 0, blank: 0, m: {} };
-  for (const l of ls) { const st = l[PEND.st]; if (st === 2) { o.booked++; continue; } st === 0 ? o.noWo++ : o.blank++; const mo = l[PEND.date].slice(0, 7); o.m[mo] = (o.m[mo] || 0) + 1; }
-  o.not = o.noWo + o.blank; return o; };
+const pendStats = (ls) => { const o = { all: ls.length, booked: 0, not: 0, m: {} };
+  for (const l of ls) { if (!notBooked(l)) { o.booked++; continue; } o.not++; const mo = l[PEND.date].slice(0, 7); o.m[mo] = (o.m[mo] || 0) + 1; }
+  return o; };
 function renderPending() {
   const all = pendLines(), months = pendMonths(all.filter(notBooked)), g = pendStats(all);
   $("mrPendSub").textContent = `${n0(g.all)} depot entr${g.all === 1 ? "y" : "ies"} since 1 Jan 2026 · ${n0(g.booked)} cost booked · `
-    + `${n0(g.not)} not booked (${n0(g.noWo)} no work order, ${n0(g.blank)} Principal Approved Amount blank)`;
+    + `${n0(g.not)} unbooked (${g.all ? Math.round(g.not / g.all * 100) : 0}%)`;
   const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : '<span class="dash">–</span>'}</td>`;
   const nums = (ls, base) => { const s = pendStats(ls);
-    return cell(s.all, `${base} data-k="all"`, "rt") + cell(s.booked, `${base} data-k="booked"`, "rt") + cell(s.noWo, `${base} data-k="0"`, "rt")
-      + cell(s.blank, `${base} data-k="1"`, "rt") + cell(s.not, `${base} data-k="not"`, "rt") + months.map((mo) => cell(s.m[mo], `${base} data-k="not" data-m="${mo}"`)).join(""); };
+    return cell(s.all, `${base} data-k="all"`, "rt") + cell(s.booked, `${base} data-k="booked"`, "rt") + cell(s.not, `${base} data-k="not"`, "rt") + months.map((mo) => cell(s.m[mo], `${base} data-k="not" data-m="${mo}"`)).join(""); };
   const nb = (ls) => ls.filter(notBooked).length;
   const depots = [...groupBy(all, PEND.depot)].sort((a, b) => nb(b[1]) - nb(a[1]) || a[0].localeCompare(b[0]));
   const searching = !!mr.pendQ;
@@ -2634,14 +2634,14 @@ function renderPending() {
   }
   const tanks = new Set(all.map((l) => l[PEND.c])).size;
   $("mrPendToggleAll").textContent = depots.length && depots.every(([d]) => mr.pendOpen.has(d)) ? "Collapse all" : "Expand all";
-  $("mrPendTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Tank</th><th class="rt">Depot Entries</th><th class="rt">Cost Booked</th><th class="rt">No Work Order</th>`
-    + `<th class="rt">Amount Blank</th><th class="rt">Not Booked</th>${months.map((mo) => `<th>${monthLabel(mo)}</th>`).join("")}</tr></thead>
-    <tbody>${body || `<tr><td colspan="${7 + months.length}" style="text-align:center;padding:30px;color:#94a3b8">No depot entries</td></tr>`}</tbody>
+  $("mrPendTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Tank</th><th class="rt">Depot Entries</th><th class="rt">Booked</th><th class="rt">Unbooked</th>${months.map((mo) => `<th>${monthLabel(mo)}</th>`).join("")}</tr></thead>
+    <tbody>${body || `<tr><td colspan="${5 + months.length}" style="text-align:center;padding:30px;color:#94a3b8">No depot entries</td></tr>`}</tbody>
     <tfoot><tr><td>GRAND TOTAL</td><td>${n0(tanks)} tanks</td>${nums(all, "")}</tr></tfoot>`;
-  $("mrPendFoot").textContent = "Depot entry = a tank movement (SARFD tblContainerMovement) of empty received from consignee, port to depot empty, "
-    + "depot empty in or empty return by shipper, from 1 Jan 2026; BL = the movement's import BL. Cost booked = a work order (tblContainerRepair) "
-    + "for that tank, dated from 3 days before the entry up to the tank's next depot entry, with the Principal Approved Amount filled in. "
-    + "Month columns = entries not booked, by entry month. Click a number to see the entries.";
+  $("mrPendFoot").textContent = "Depot entry = a tank coming into a depot (SARFD tblContainerMovement: empty received from consignee, port to depot empty, "
+    + "depot empty in, empty return by shipper) from 1 Jan 2026, with the import BL it came on. Booked = the tank's work order for that visit "
+    + "(tblContainerRepair, matched on the import / export BL, else the work-order date) has the Principal Approved Amount filled in, "
+    + "or the depot charges were uploaded on a purchase invoice (PICI) during the visit. Month columns = unbooked entries by entry month. "
+    + "Click a number to see the tanks.";
 }
 $("mrPendSearch").oninput = (e) => { mr.pendQ = e.target.value; renderPending(); };
 $("mrPendToggleAll").onclick = () => {
@@ -2649,8 +2649,8 @@ $("mrPendToggleAll").onclick = () => {
   if (ds.length && ds.every((d) => mr.pendOpen.has(d))) mr.pendOpen.clear(); else for (const d of ds) mr.pendOpen.add(d);
   renderPending();
 };
-const PEND_K = { all: () => true, booked: (l) => l[PEND.st] === 2, not: notBooked, 0: (l) => l[PEND.st] === 0, 1: (l) => l[PEND.st] === 1 };
-const PEND_K_LABEL = { all: "All entries", booked: "Cost booked", not: "Not booked", 0: "No work order", 1: "Amount blank" };
+const PEND_K = { all: () => true, booked: (l) => !notBooked(l), not: notBooked };
+const PEND_K_LABEL = { all: "All entries", booked: "Booked", not: "Unbooked" };
 $("mrPendTable").onclick = (e) => {
   const tg = e.target.closest("[data-ptg]");
   if (tg) { const d = tg.dataset.ptg; mr.pendOpen.has(d) ? mr.pendOpen.delete(d) : mr.pendOpen.add(d); return renderPending(); }
@@ -2660,13 +2660,13 @@ $("mrPendTable").onclick = (e) => {
   openPendLines([d, c, m && monthLabel(m), PEND_K_LABEL[k]].filter(Boolean).join(" › "), ls);
 };
 const pendRow = (l) => ({ "Tank No": l[PEND.c], Depot: l[PEND.depot], Agent: l[PEND.agent], "Entry Date": l[PEND.date] ? new Date(l[PEND.date] + "T00:00") : "",
-  "Entry Activity": l[PEND.act], "Import BL": l[PEND.bl], "Work Order": l[PEND.wo], "Cost Status": PEND_ST[l[PEND.st]], "Current Tank Status": l[PEND.now] });
+  "Entry Activity": l[PEND.act], "Import BL": l[PEND.bl], "Work Order / Invoice": l[PEND.wo], "Cost Status": PEND_ST[l[PEND.st]], "Current Tank Status": l[PEND.now] });
 const PEND_WIDTHS = [14, 30, 30, 12, 30, 20, 30, 30, 26];
 function openPendLines(title, ls) {
   mr.pendLines = { title, ls };
   $("pTitle").textContent = `Billing Pendency › ${title}`;
   $("pSub").textContent = `${n0(ls.length)} depot entr${ls.length === 1 ? "y" : "ies"} · ${n0(new Set(ls.map((l) => l[PEND.c])).size)} tanks`;
-  $("pTable").innerHTML = `<thead><tr><th>Tank No</th><th>Depot</th><th>Entry Date</th><th>Import BL</th><th>Work Order</th><th>Cost Status</th><th>Current Status</th></tr></thead><tbody>`
+  $("pTable").innerHTML = `<thead><tr><th>Tank No</th><th>Depot</th><th>Entry Date</th><th>Import BL</th><th>Work Order / Invoice</th><th>Cost Status</th><th>Current Status</th></tr></thead><tbody>`
     + ls.map((l) => `<tr><td class="mono">${esc(l[PEND.c])}</td><td class="name" title="${esc(l[PEND.depot])}">${esc(l[PEND.depot])}</td>`
       + `<td title="${esc(l[PEND.act])}">${shortDate(l[PEND.date])}</td><td class="mono">${esc(l[PEND.bl]) || '<span class="dash">–</span>'}</td>`
       + `<td class="mono">${esc(l[PEND.wo]) || '<span class="dash">–</span>'}</td><td>${PEND_ST[l[PEND.st]]}</td><td>${esc(l[PEND.now])}</td></tr>`).join("") + "</tbody>";
@@ -2679,7 +2679,7 @@ $("pXlsx").onclick = () => { const p = mr.pendLines; if (p) writeXlsx(`SAR_Billi
 $("mrPendXlsx").onclick = () => {   // the depot × month table and every depot entry with its cost status
   const all = pendLines(), months = pendMonths(all.filter(notBooked));
   const row = (depot, tank, ls) => { const s = pendStats(ls);
-    const o = { "Depot Name": depot, Tank: tank, "Depot Entries": s.all, "Cost Booked": s.booked, "No Work Order": s.noWo, "Amount Blank": s.blank, "Not Booked": s.not };
+    const o = { "Depot Name": depot, Tank: tank, "Depot Entries": s.all, Booked: s.booked, Unbooked: s.not };
     for (const mo of months) o[monthLabel(mo)] = s.m[mo] || 0;
     return o; };
   const out = [];
@@ -2688,7 +2688,7 @@ $("mrPendXlsx").onclick = () => {   // the depot × month table and every depot 
     for (const [c, tl] of [...groupBy(ls, PEND.c)].sort((a, b) => a[0].localeCompare(b[0]))) out.push(row("", c, tl));
   }
   out.push(row("GRAND TOTAL", "", all));
-  writeXlsx(`SAR_Billing_Pendency_${todayIso()}.xlsx`, [["By Depot (Not Booked)", out, [30, 14, 12, 12, 13, 13, 11, ...months.map(() => 10)]], ["Depot Entries", all.map(pendRow), PEND_WIDTHS, 3]]);
+  writeXlsx(`SAR_Billing_Pendency_${todayIso()}.xlsx`, [["By Depot (Unbooked)", out, [30, 14, 12, 10, 10, ...months.map(() => 10)]], ["Depot Entries", all.map(pendRow), PEND_WIDTHS, 3]]);
 };
 
 // ---- Total Inventory
