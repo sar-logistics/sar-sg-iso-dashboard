@@ -2620,7 +2620,8 @@ function pendLines() {
   return (mr.data?.pending || []).filter((l) => !q || [l[PEND.depot], l[PEND.c], l[PEND.charge], l[PEND.wo], l[PEND.agent]].some((v) => (v || "").toLowerCase().includes(q)));
 }
 function renderPending() {
-  const all = pendLines(), usd = all.filter((l) => l[PEND.cur] === "USD"), other = all.filter((l) => l[PEND.cur] !== "USD");
+  const all = pendLines(), noAmt = all.filter((l) => l[PEND.amt] == null);
+  const usd = all.filter((l) => l[PEND.amt] != null && l[PEND.cur] === "USD"), other = all.filter((l) => l[PEND.amt] != null && l[PEND.cur] !== "USD");
   const months = [...new Set(usd.map((l) => l[PEND.date].slice(0, 7)))].filter(Boolean).sort();
   const sum = (ls) => { const o = { total: 0, m: {} }; for (const l of ls) { o.total += l[PEND.amt]; const mo = l[PEND.date].slice(0, 7); o.m[mo] = (o.m[mo] || 0) + l[PEND.amt]; } return o; };
   const tanks = new Set(all.map((l) => l[PEND.c])).size;
@@ -2648,13 +2649,13 @@ function renderPending() {
   const byCur = new Map(); for (const l of other) byCur.set(l[PEND.cur], (byCur.get(l[PEND.cur]) || 0) + l[PEND.amt]);
   $("mrPendFoot").textContent = "Pending = a work-order line (SARFD tblContainerRepair) on a tank whose latest movement is Depot In "
     + "(empty available, survey, washing / under cleaning, empty allocated to shipper, under repair) whose cost is not posted: "
-    + "no M&R purchase invoice (MRPI) carries the work order number. Amount = the principal amount, else rate × quantity × exchange rate "
-    + "in the principal currency, else rate × quantity in the line's own currency; month = work-order date."
+    + "no M&R purchase invoice (MRPI) carries the work order number. Amount = the principal amount in SARFD; month = work-order date."
+    + (noAmt.length ? ` ${n0(noAmt.length)} line${noAmt.length === 1 ? " has" : "s have"} no principal amount, so ${noAmt.length === 1 ? "it is" : "they are"} not in the totals — in Export to Excel with a blank amount.` : "")
     + (other.length ? ` Not in the USD totals: ${[...byCur].map(([c, v]) => `${c} ${pendMoney(v)}`).join(", ")} (${other.length} line${other.length === 1 ? "" : "s"}) — in Export to Excel.` : "");
 }
 $("mrPendSearch").oninput = (e) => { mr.pendQ = e.target.value; renderPending(); };
 $("mrPendToggleAll").onclick = () => {
-  const ds = [...new Set(pendLines().filter((l) => l[PEND.cur] === "USD").map((l) => l[PEND.depot]))];
+  const ds = [...new Set(pendLines().filter((l) => l[PEND.amt] != null && l[PEND.cur] === "USD").map((l) => l[PEND.depot]))];
   if (ds.length && ds.every((d) => mr.pendOpen.has(d))) mr.pendOpen.clear(); else for (const d of ds) mr.pendOpen.add(d);
   renderPending();
 };
@@ -2663,11 +2664,11 @@ $("mrPendTable").onclick = (e) => {
   if (tg) { const d = tg.dataset.ptg; mr.pendOpen.has(d) ? mr.pendOpen.delete(d) : mr.pendOpen.add(d); return renderPending(); }
   const b = e.target.closest("button.num"); if (!b) return;
   const { d, c, m } = b.dataset;
-  const ls = pendLines().filter((l) => l[PEND.cur] === "USD" && (!d || l[PEND.depot] === d) && (!c || l[PEND.c] === c) && (!m || l[PEND.date].startsWith(m)));
+  const ls = pendLines().filter((l) => l[PEND.amt] != null && l[PEND.cur] === "USD" && (!d || l[PEND.depot] === d) && (!c || l[PEND.c] === c) && (!m || l[PEND.date].startsWith(m)));
   openPendLines([d, c, m && monthLabel(m)].filter(Boolean).join(" › ") || "All depots", ls);
 };
 const pendRow = (l) => ({ "Tank No": l[PEND.c], "Tank Status": l[PEND.act], Depot: l[PEND.depot], Agent: l[PEND.agent], "Work Order": l[PEND.wo],
-  "Work Order Date": l[PEND.date] ? new Date(l[PEND.date] + "T00:00") : "", Charge: l[PEND.charge], Currency: l[PEND.cur], "Pending Amount": l[PEND.amt] });
+  "Work Order Date": l[PEND.date] ? new Date(l[PEND.date] + "T00:00") : "", Charge: l[PEND.charge], Currency: l[PEND.cur], "Pending Amount": l[PEND.amt] ?? "" });
 const PEND_WIDTHS = [14, 26, 30, 30, 16, 14, 36, 9, 14];
 function openPendLines(title, ls) {
   mr.pendLines = { title, ls };
@@ -2684,7 +2685,7 @@ $("pClose").onclick = closePendLines;
 $("pendOverlay").onclick = (e) => { if (e.target === $("pendOverlay")) closePendLines(); };
 $("pXlsx").onclick = () => { const p = mr.pendLines; if (p) writeXlsx(`SAR_Billing_Pendency_${todayIso()}.xlsx`, [["Pending Lines", p.ls.map(pendRow), PEND_WIDTHS, 5]]); };
 $("mrPendXlsx").onclick = () => {   // the month table (USD) and every line, all currencies
-  const all = pendLines(), usd = all.filter((l) => l[PEND.cur] === "USD");
+  const all = pendLines(), usd = all.filter((l) => l[PEND.amt] != null && l[PEND.cur] === "USD");
   const months = [...new Set(usd.map((l) => l[PEND.date].slice(0, 7)))].filter(Boolean).sort();
   const row = (depot, tank, ls) => { const o = { "Depot Name": depot, Tank: tank, "Grand Total (USD)": 0 };
     for (const mo of months) o[monthLabel(mo)] = 0;
