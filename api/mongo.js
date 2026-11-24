@@ -283,9 +283,9 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v4";
+const MR_SNAPSHOT_ID = "mr-inventory-v5";
 const OFF_HIRE_ACTIVITY = "OFF HIRE";
-const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice"];
+const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice", "tblContainerRepair"];
 
 /** Status bucket from the activity name (keyword rules from the requirements document). */
 function mrBucket(activity) {
@@ -349,8 +349,33 @@ async function buildMr(db, lastSync) {
     });
   }
   tanks.sort((a, b) => a.c.localeCompare(b.c));
+  const pending = await buildBillingPendency(db, tanks);
   const dataTo = latest.reduce((mx, m) => (m.date && +new Date(m.date) > mx ? +new Date(m.date) : mx), 0);
-  return { tanks, offHire, depots, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
+  return { tanks, offHire, depots, pending, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
+}
+
+// Billing pendency (M&R Operations): repair / cleaning lines of SARFD work orders (tblContainerRepair D rows) on tanks whose
+// latest movement is a Depot In status, where the line has a principal currency but no principal amount (detailAmount),
+// i.e. cost not yet billed to the principal. Amount = rate × quantity (1 when blank) × exchange rate, the same way SARFD
+// fills the principal amount, in the principal currency. Rows: [tank, depot, agent, work order, date, charge, currency, amount, activity].
+async function buildBillingPendency(db, tanks) {
+  const depotIn = new Map(tanks.filter((t) => TANK_STATUS[t.activity.toUpperCase()] === "Idle").map((t) => [t.c.toUpperCase(), t]));
+  const [heads, lines] = await Promise.all([
+    db.collection("tblContainerRepair").find({ recordType: "H", deletedNo: { $nin: [null, 0] } }, { projection: { _id: 0, containerRepairNo: 1 } }).toArray(),
+    db.collection("tblContainerRepair").find({ recordType: "D", detailPrincipalCurrencyCode: { $nin: [null, ""] }, detailAmount: null },
+      { projection: { _id: 0, containerRepairNo: 1, containerRepairDate: 1, containerNo: 1, depotName: 1, agentName: 1, detailChargeName: 1,
+        detailRate: 1, detailQuantity: 1, detailExchangeRate: 1, detailPrincipalCurrencyCode: 1, detailDeletedNo: 1 } }).toArray(),
+  ]);
+  const deleted = new Set(heads.map((h) => s(h.containerRepairNo)));
+  const out = [];
+  for (const l of lines) {
+    const t = depotIn.get(s(l.containerNo).toUpperCase());
+    if (!t || l.detailDeletedNo || deleted.has(s(l.containerRepairNo))) continue;
+    const amt = Math.round((l.detailRate ?? 0) * (l.detailQuantity || 1) * (l.detailExchangeRate || 1) * 100) / 100;
+    out.push([t.c, s(l.depotName) || "(No depot)", s(l.agentName), s(l.containerRepairNo), l.containerRepairDate ? new Date(l.containerRepairDate).toISOString().slice(0, 10) : "",
+      s(l.detailChargeName), s(l.detailPrincipalCurrencyCode), amt, t.activity]);
+  }
+  return out.sort((a, b) => (a[4] < b[4] ? 1 : a[4] > b[4] ? -1 : 0));
 }
 
 // Depot details for the Tank Inventory report, all from SARFD (key = upper-cased depot / location name):

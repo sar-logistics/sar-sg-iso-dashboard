@@ -359,6 +359,7 @@
   .mr-depot .tg { margin-right: 6px; }
   .mr-depot th.rt, .mr-depot td.rt { background: #F0F4FF; font-weight: 700; }
   .mr-depot tfoot td, .mr-pivot tfoot td { font-family: "JetBrains Mono", monospace; }
+  .mr-pend td:nth-child(2) { max-width: none; }
   .mr-depot tfoot td:first-child, .mr-pivot tfoot td:first-child { font-family: "Plus Jakarta Sans", sans-serif; }
   .tank-table td { font-family: "Plus Jakarta Sans", sans-serif; }
   .tank-table td.mono { font-family: "JetBrains Mono", monospace; }
@@ -1080,6 +1081,21 @@
       <div class="sec-body"><div class="tbl-wrap" style="max-height:640px"><table class="mr-depot" id="mrDepotTable"></table></div></div>
     </section>
   </div>
+
+  <div id="mrPending">   <!-- Billing Pendency, under the Depot Report -->
+    <section class="card panel sec-collapsed" id="mrPendCard">   <!-- starts collapsed -->
+      <div class="tools" style="justify-content:space-between">
+        <div><h2><button type="button" class="sec-tg" data-sec="mrPendCard" aria-expanded="false" title="Collapse / expand"><span class="chev" aria-hidden="true"></span></button>Billing Pendency</h2><p class="sub" style="margin-bottom:0" id="mrPendSub"></p></div>
+        <div class="tools" style="margin:0">
+          <input class="search" id="mrPendSearch" placeholder="Search depot, tank or charge…">
+          <button class="btn" id="mrPendToggleAll">Expand all</button>
+          <button class="btn" id="mrPendXlsx">Export to Excel</button>
+        </div>
+      </div>
+      <div class="sec-body"><div class="tbl-wrap" style="max-height:640px"><table class="mr-depot mr-pend" id="mrPendTable"></table></div>
+        <p class="foot" id="mrPendFoot" style="margin:10px 0 0"></p></div>
+    </section>
+  </div>
   </div>
 </main>
 
@@ -1314,6 +1330,19 @@
       </div>
     </div>
     <div class="body"><table id="tTable" class="tank-table"></table></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="pendOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pTitle">
+    <div class="head">
+      <div><h3 id="pTitle"></h3><div class="foot" id="pSub"></div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn" id="pXlsx">Export to Excel</button>
+        <button class="btn" id="pClose" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="body"><table id="pTable" class="tank-table"></table></div>
   </div>
 </div>
 
@@ -2527,7 +2556,7 @@ const MR_COLORS = { Empty: "#2563EB", "Loaded Full": "#1F8A4C", "Sent to Consign
                     "Under Cleaning": "#D98E04", "Under Repair": "#C24A2E", "Under Survey": "#C99A3B", Other: "#94A3B8" };
 const MR_LABEL = { Other: "Other Activity" };
 const PRINCIPAL_COLORS = ["#1E3A8A", "#0E9AA7", "#D98E04", "#7B5EA7", "#1F8A4C", "#C24A2E"];
-const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), mode: store.get("sar.mrMode", "table") === "chart" ? "chart" : "table", principal: "", open: new Set(), depotOpen: new Set(), depotQ: "", drill: null, drillQ: "" };
+const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), mode: store.get("sar.mrMode", "table") === "chart" ? "chart" : "table", principal: "", open: new Set(), depotOpen: new Set(), depotQ: "", pendOpen: new Set(), pendQ: "", pendLines: null, drill: null, drillQ: "" };
 const n0 = (v) => Number(v || 0).toLocaleString("en-IN");
 const DAY_MS = 86400000;
 const idleDays = (t) => (t.date ? Math.max(0, Math.floor((Date.now() - new Date(t.date + "T00:00")) / DAY_MS)) : null);
@@ -2565,7 +2594,97 @@ function renderMr() {
   $("mrSub").title = $("mrSub").textContent;
   renderInventory();
   renderDepot();
+  renderPending();
 }
+
+// ---- Billing Pendency: SARFD repair / cleaning lines on tanks now Depot In with a principal currency but no principal
+// amount (not yet billed). mr.data.pending rows: [tank, depot, agent, work order, date, charge, currency, amount, activity].
+// Depot rows (+ opens the tanks) × work-order months, in USD; lines in other currencies are listed, not added in.
+const PEND = { c: 0, depot: 1, agent: 2, wo: 3, date: 4, charge: 5, cur: 6, amt: 7, act: 8 };
+const pendMoney = (v) => (Math.round(v) < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("en-US");
+function pendLines() {
+  const q = mr.pendQ.trim().toLowerCase();
+  return (mr.data?.pending || []).filter((l) => !q || [l[PEND.depot], l[PEND.c], l[PEND.charge], l[PEND.wo], l[PEND.agent]].some((v) => (v || "").toLowerCase().includes(q)));
+}
+function renderPending() {
+  const all = pendLines(), usd = all.filter((l) => l[PEND.cur] === "USD"), other = all.filter((l) => l[PEND.cur] !== "USD");
+  const months = [...new Set(usd.map((l) => l[PEND.date].slice(0, 7)))].filter(Boolean).sort();
+  const sum = (ls) => { const o = { total: 0, m: {} }; for (const l of ls) { o.total += l[PEND.amt]; const mo = l[PEND.date].slice(0, 7); o.m[mo] = (o.m[mo] || 0) + l[PEND.amt]; } return o; };
+  const tanks = new Set(all.map((l) => l[PEND.c])).size;
+  $("mrPendSub").textContent = `${n0(tanks)} Depot In tank${tanks === 1 ? "" : "s"} · ${n0(all.length)} work-order line${all.length === 1 ? "" : "s"} without a principal amount · $${pendMoney(sum(usd).total)} by work-order month`;
+  const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${pendMoney(v)}</button>` : '<span class="dash">–</span>'}</td>`;
+  const nums = (ls, base) => { const s = sum(ls); return cell(s.total, base, "rt") + months.map((mo) => cell(s.m[mo], `${base} data-m="${mo}"`)).join(""); };
+  const byDepot = new Map();
+  for (const l of usd) { const d = l[PEND.depot]; if (!byDepot.has(d)) byDepot.set(d, []); byDepot.get(d).push(l); }
+  const depots = [...byDepot].sort((a, b) => sum(b[1]).total - sum(a[1]).total || a[0].localeCompare(b[0]));
+  const searching = !!mr.pendQ;
+  let body = "";
+  for (const [d, ls] of depots) {
+    const open = searching || mr.pendOpen.has(d), byTank = new Map();
+    for (const l of ls) { if (!byTank.has(l[PEND.c])) byTank.set(l[PEND.c], []); byTank.get(l[PEND.c]).push(l); }
+    body += `<tr class="dp0"><td title="${esc(d)}"><button class="tg" data-ptg="${esc(d)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(d)}</td>`
+      + `<td><span class="dash">${n0(byTank.size)} tank${byTank.size === 1 ? "" : "s"}</span></td>` + nums(ls, `data-d="${esc(d)}"`) + "</tr>";
+    if (open) for (const [c, tl] of [...byTank].sort((a, b) => sum(b[1]).total - sum(a[1]).total || a[0].localeCompare(b[0])))
+      body += `<tr class="dp1"><td></td><td title="${esc(tl[0][PEND.act])}">${esc(c)} <span class="dash">${esc(tl[0][PEND.act])}</span></td>` + nums(tl, `data-d="${esc(d)}" data-c="${esc(c)}"`) + "</tr>";
+  }
+  const grand = sum(usd);
+  $("mrPendToggleAll").textContent = depots.length && depots.every(([d]) => mr.pendOpen.has(d)) ? "Collapse all" : "Expand all";
+  $("mrPendTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Tank</th><th class="rt">Grand Total (USD)</th>${months.map((mo) => `<th>${monthLabel(mo)}</th>`).join("")}</tr></thead>
+    <tbody>${body || `<tr><td colspan="${3 + months.length}" style="text-align:center;padding:30px;color:#94a3b8">No billing pendency</td></tr>`}</tbody>
+    <tfoot><tr><td>GRAND TOTAL</td><td>${n0(new Set(usd.map((l) => l[PEND.c])).size)} tanks</td>${nums(usd, "")}</tr></tfoot>`;
+  const byCur = new Map(); for (const l of other) byCur.set(l[PEND.cur], (byCur.get(l[PEND.cur]) || 0) + l[PEND.amt]);
+  $("mrPendFoot").textContent = "Pending = a work-order line (SARFD tblContainerRepair) on a tank whose latest movement is Depot In "
+    + "(empty available, survey, washing / under cleaning, empty allocated to shipper, under repair) that has a principal currency but a blank principal amount. "
+    + "Amount = rate × quantity × exchange rate, as SARFD fills the principal amount; month = work-order date."
+    + (other.length ? ` Not in the USD totals: ${[...byCur].map(([c, v]) => `${c} ${pendMoney(v)}`).join(", ")} (${other.length} line${other.length === 1 ? "" : "s"}) — in Export to Excel.` : "");
+}
+$("mrPendSearch").oninput = (e) => { mr.pendQ = e.target.value; renderPending(); };
+$("mrPendToggleAll").onclick = () => {
+  const ds = [...new Set(pendLines().filter((l) => l[PEND.cur] === "USD").map((l) => l[PEND.depot]))];
+  if (ds.length && ds.every((d) => mr.pendOpen.has(d))) mr.pendOpen.clear(); else for (const d of ds) mr.pendOpen.add(d);
+  renderPending();
+};
+$("mrPendTable").onclick = (e) => {
+  const tg = e.target.closest("[data-ptg]");
+  if (tg) { const d = tg.dataset.ptg; mr.pendOpen.has(d) ? mr.pendOpen.delete(d) : mr.pendOpen.add(d); return renderPending(); }
+  const b = e.target.closest("button.num"); if (!b) return;
+  const { d, c, m } = b.dataset;
+  const ls = pendLines().filter((l) => l[PEND.cur] === "USD" && (!d || l[PEND.depot] === d) && (!c || l[PEND.c] === c) && (!m || l[PEND.date].startsWith(m)));
+  openPendLines([d, c, m && monthLabel(m)].filter(Boolean).join(" › ") || "All depots", ls);
+};
+const pendRow = (l) => ({ "Tank No": l[PEND.c], "Tank Status": l[PEND.act], Depot: l[PEND.depot], Agent: l[PEND.agent], "Work Order": l[PEND.wo],
+  "Work Order Date": l[PEND.date] ? new Date(l[PEND.date] + "T00:00") : "", Charge: l[PEND.charge], Currency: l[PEND.cur], "Pending Amount": l[PEND.amt] });
+const PEND_WIDTHS = [14, 26, 30, 30, 16, 14, 36, 9, 14];
+function openPendLines(title, ls) {
+  mr.pendLines = { title, ls };
+  $("pTitle").textContent = `Billing Pendency › ${title}`;
+  $("pSub").textContent = `${n0(ls.length)} line${ls.length === 1 ? "" : "s"} · $${pendMoney(ls.reduce((a, l) => a + l[PEND.amt], 0))} without a principal amount`;
+  $("pTable").innerHTML = `<thead><tr><th>Tank No</th><th>Tank Status</th><th>Depot</th><th>Work Order</th><th>Date</th><th>Charge</th><th class="amt">Amount</th></tr></thead><tbody>`
+    + ls.map((l) => `<tr><td class="mono">${esc(l[PEND.c])}</td><td>${esc(l[PEND.act])}</td><td class="name" title="${esc(l[PEND.depot])}">${esc(l[PEND.depot])}</td>`
+      + `<td class="mono">${esc(l[PEND.wo])}</td><td>${l[PEND.date] ? shortDate(l[PEND.date]) : ""}</td><td class="name" title="${esc(l[PEND.charge])}">${esc(l[PEND.charge])}</td>`
+      + `<td class="amt mono">${esc(l[PEND.cur])} ${pendMoney(l[PEND.amt])}</td></tr>`).join("") + "</tbody>";
+  $("pendOverlay").classList.remove("hidden");
+}
+const closePendLines = () => { $("pendOverlay").classList.add("hidden"); mr.pendLines = null; };
+$("pClose").onclick = closePendLines;
+$("pendOverlay").onclick = (e) => { if (e.target === $("pendOverlay")) closePendLines(); };
+$("pXlsx").onclick = () => { const p = mr.pendLines; if (p) writeXlsx(`SAR_Billing_Pendency_${todayIso()}.xlsx`, [["Pending Lines", p.ls.map(pendRow), PEND_WIDTHS, 5]]); };
+$("mrPendXlsx").onclick = () => {   // the month table (USD) and every line, all currencies
+  const all = pendLines(), usd = all.filter((l) => l[PEND.cur] === "USD");
+  const months = [...new Set(usd.map((l) => l[PEND.date].slice(0, 7)))].filter(Boolean).sort();
+  const row = (depot, tank, ls) => { const o = { "Depot Name": depot, Tank: tank, "Grand Total (USD)": 0 };
+    for (const mo of months) o[monthLabel(mo)] = 0;
+    for (const l of ls) { o["Grand Total (USD)"] += l[PEND.amt]; o[monthLabel(l[PEND.date].slice(0, 7))] += l[PEND.amt]; }
+    return o; };
+  const out = [], byDepot = new Map();
+  for (const l of usd) { if (!byDepot.has(l[PEND.depot])) byDepot.set(l[PEND.depot], []); byDepot.get(l[PEND.depot]).push(l); }
+  for (const [d, ls] of [...byDepot].sort((a, b) => a[0].localeCompare(b[0]))) {
+    out.push(row(d, "", ls));
+    for (const c of [...new Set(ls.map((l) => l[PEND.c]))].sort()) out.push(row("", c, ls.filter((l) => l[PEND.c] === c)));
+  }
+  out.push(row("GRAND TOTAL", "", usd));
+  writeXlsx(`SAR_Billing_Pendency_${todayIso()}.xlsx`, [["By Month (USD)", out, [30, 14, 16, ...months.map(() => 10)]], ["Pending Lines", all.map(pendRow), PEND_WIDTHS, 5]]);
+};
 
 // ---- Total Inventory
 function renderInventory() {
