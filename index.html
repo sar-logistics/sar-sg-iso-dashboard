@@ -4441,6 +4441,53 @@ function frame(t) {
   }
   requestAnimationFrame(tick);
 })();
+
+// ---- KPI count-up: every KPI card number (.kpi .val) counts up from 0 to its value when it is drawn or changes (user, 24 Nov).
+// Works for any format ("1,022", "$12.34M", "₹1,23,456", "37%"): the first number in the text is animated, the rest is kept.
+(() => {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const DUR = 900, ease = (x) => 1 - Math.pow(1 - x, 3);
+  const NUM = /\d[\d,]*(?:\.\d+)?/, wrote = new WeakMap(), shown = new Map();   // the text we last wrote, so our own frames are not re-animated
+  function animate(el) {
+    const final = el.textContent, m = final.match(NUM);
+    if (!m || el.dataset.cuDone === final || wrote.get(el) === final) return;
+    // a card redrawn with the same value (e.g. a page re-render) does not count up again
+    const key = (el.closest(".kpi")?.querySelector(".lbl")?.textContent || "") + "|" + (el.closest("main")?.id || "");
+    if (shown.get(key) === final) { el.dataset.cuDone = final; return; }
+    shown.set(key, final);
+    const tok = m[0], dec = (tok.split(".")[1] || "").length, target = parseFloat(tok.replace(/,/g, ""));
+    if (!isFinite(target) || target === 0) { el.dataset.cuDone = final; return; }
+    const groups = tok.split(".")[0].split(",");
+    const locale = !tok.includes(",") ? null : groups.slice(1).every((g) => g.length === 3) ? "en-US" : "en-IN";
+    const fmt = (v) => locale ? v.toLocaleString(locale, { minimumFractionDigits: dec, maximumFractionDigits: dec }) : v.toFixed(dec);
+    const pre = final.slice(0, m.index), post = final.slice(m.index + tok.length);
+    el.dataset.cuDone = final;   // set first so the observer ignores our own frames
+    const t0 = performance.now();
+    const step = (now) => {
+      if (el.dataset.cuDone !== final) return;   // the value changed again: a newer animation owns it
+      const x = Math.min(1, (now - t0) / DUR);
+      const txt = x < 1 ? pre + fmt(target * ease(x)) + post : final;
+      wrote.set(el, txt); el.textContent = txt;
+      if (x < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  const scan = (root) => { if (!root || root.nodeType !== 1) return; if (root.matches(".kpi .val")) animate(root); root.querySelectorAll?.(".kpi .val").forEach(animate); };
+  new MutationObserver((muts) => {
+    for (const mu of muts) {
+      if (mu.type === "childList") { mu.addedNodes.forEach((n) => scan(n.nodeType === 3 ? n.parentElement : n)); }
+      else if (mu.type === "characterData") scan(mu.target.parentElement);
+    }
+  }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  // opening a page from the sidebar counts its cards up again, including cards drawn earlier while the page was hidden
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".side nav a[data-page]") || e.target.closest(".chev-btn")) return;
+    shown.clear();
+    setTimeout(() => document.querySelectorAll(".kpi .val").forEach((el) => {
+      if (el.offsetParent && el.dataset.cuDone === el.textContent) { delete el.dataset.cuDone; wrote.delete(el); animate(el); }
+    }), 0);
+  }, true);
+})();
 </script>
 <script>
 (function () {
