@@ -337,13 +337,6 @@
   .mr-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .mr-controls select { max-width: 260px; }
   /* collapsible M&R sections: the arrow before the heading folds the card's body away */
-  .sec-tg { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin: 0 8px 0 -4px; padding: 0; vertical-align: -3px;
-    border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink-soft); cursor: pointer; }
-  .sec-tg:hover { border-color: #6488D6; color: var(--accent); }
-  .sec-tg .chev { width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform .15s; }
-  .sec-collapsed .sec-tg .chev { transform: rotate(-45deg); }
-  .sec-collapsed .sec-body, .sec-collapsed .tools .tools { display: none; }
-  .sec-collapsed > .tools { margin-bottom: 0; }
   .mr-tab { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; animation: viewFadeIn .35s ease both; }   /* minmax: wide tables scroll inside their card, not the page */
   .mr-tab.hidden { display: none; }
   .kpis.mr-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
@@ -1065,9 +1058,9 @@
   <div class="alert hidden" id="mrErr" role="alert"></div>
   <div id="mrInventory" class="mr-tab">
     <!-- Inventory Details: one card with the Table / Chart switch, the export button and the table or chart -->
-    <section class="card panel sec-collapsed" id="mrDetailsCard">   <!-- starts collapsed -->
+    <section class="card panel" id="mrDetailsCard">
       <div class="tools" style="justify-content:space-between">
-        <div><h2><button type="button" class="sec-tg" data-sec="mrDetailsCard" aria-expanded="false" title="Collapse / expand"><span class="chev" aria-hidden="true"></span></button>Inventory Details</h2><p class="sub" style="margin-bottom:0" id="mrViewSub"></p></div>
+        <div><h2>Inventory Details</h2><p class="sub" style="margin-bottom:0" id="mrViewSub"></p></div>
         <div class="tools" style="margin:0">
           <button class="btn" id="mrPivotXlsx">Export to Excel</button>
           <div class="view-toggle" id="mrViewToggle" role="group" aria-label="Show as">
@@ -1082,10 +1075,10 @@
       </div>
     </section>
 
-  <div id="mrDepot">   <!-- Depot Report, on the same page under Total Inventory -->
-    <section class="card panel sec-collapsed" id="mrDepotCard">   <!-- starts collapsed -->
+  <div id="mrDepot" class="hidden">   <!-- Depot Report: shown on its own (sidebar sub-item) -->
+    <section class="card panel" id="mrDepotCard">
       <div class="tools" style="justify-content:space-between">
-        <div><h2><button type="button" class="sec-tg" data-sec="mrDepotCard" aria-expanded="false" title="Collapse / expand"><span class="chev" aria-hidden="true"></span></button>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
+        <div><h2>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
         <div class="tools" style="margin:0">
           <input class="search" id="mrDepotSearch" placeholder="Search depot or agent…">
           <button class="btn" id="mrDepotToggleAll">Expand all</button>
@@ -1096,10 +1089,10 @@
     </section>
   </div>
 
-  <div id="mrPending">   <!-- Billing Pendency, under the Depot Report -->
-    <section class="card panel sec-collapsed" id="mrPendCard">   <!-- starts collapsed -->
+  <div id="mrPending" class="hidden">   <!-- Billing Pendency: shown on its own (sidebar sub-item) -->
+    <section class="card panel" id="mrPendCard">
       <div class="tools" style="justify-content:space-between">
-        <div><h2><button type="button" class="sec-tg" data-sec="mrPendCard" aria-expanded="false" title="Collapse / expand"><span class="chev" aria-hidden="true"></span></button>Billing Pendency</h2><p class="sub" style="margin-bottom:0" id="mrPendSub"></p></div>
+        <div><h2>Billing Pendency</h2><p class="sub" style="margin-bottom:0" id="mrPendSub"></p></div>
         <div class="tools" style="margin:0">
           <input class="search" id="mrPendSearch" placeholder="Search depot, tank, BL or work order…">
           <button class="btn" id="mrPendToggleAll">Expand all</button>
@@ -1771,28 +1764,26 @@ for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
   } else if (perf) {   // Performance itself: Billing Details, sub-items shown
     Object.assign(state, { detail: "billing", mode: "table", detailQ: "", detailAll: false }); $("detailSearch").value = ""; perfOpen = true;
   }
-  if (a.dataset.page === "mr") { mrOpen = true; mrSec = a.dataset.sec || ""; }
+  if (a.dataset.page === "mr") { mrOpen = true; mrSec = a.dataset.sec || "mrDetailsCard"; }   // M&R itself opens Inventory Details
   route(a.dataset.page);
-  if (a.dataset.sec) openMrSection(a.dataset.sec);
+  if (a.dataset.page === "mr") openMrSection(mrSec);
   if (perf && state.lines.length) render();
   if (a.dataset.detail) $("tableView").scrollIntoView({ behavior: "smooth", block: "start" });
 };
 // Billing Details / Agent Detail / Trade Lane Detail sit under Performance in the sidebar (table view only).
 let perfOpen = true;    // Performance opens first with its sub-items shown; the arrow next to Performance shows / hides them
-// Inventory Details / Depot Report / Billing Pendency sit under M&R Operations the same way: a sub-item opens that section and scrolls to it.
-let mrOpen = false, mrSec = "";
+// Inventory Details / Depot Report / Billing Pendency sit under M&R Operations the same way: each sub-item shows only that section.
+let mrOpen = false, mrSec = "mrDetailsCard";
+const MR_SEC_BOX = { mrDetailsCard: "mrDetailsCard", mrDepotCard: "mrDepot", mrPendCard: "mrPending" };
 function toggleSub(el) {
   if (el.closest('a[data-page="mr"]')) mrOpen = !mrOpen; else perfOpen = !perfOpen;
   markPerfSub();
 }
 function openMrSection(id) {
-  const card = $(id); if (!card) return;
-  card.classList.remove("sec-collapsed"); card.querySelector(".sec-tg")?.setAttribute("aria-expanded", "true");
+  if (!MR_SEC_BOX[id]) id = "mrDetailsCard";
+  for (const [sec, box] of Object.entries(MR_SEC_BOX)) $(box).classList.toggle("hidden", sec !== id);
   if (id === "mrDetailsCard" && mr.data) renderInventory();   // the chart needs a visible box
-  requestAnimationFrame(() => {   // land below the sticky top bar and KPI row
-    const top = getComputedStyle($("topbar")).position === "static" ? 0 : $("topbar").getBoundingClientRect().height;
-    scrollTo({ top: card.getBoundingClientRect().top + scrollY - top - 12, behavior: "smooth" });
-  });
+  scrollTo({ top: 0 });
 }
 function markPerfSub(page = currentPage) {
   $("perfSub").classList.toggle("hidden", !perfOpen);
@@ -2739,7 +2730,6 @@ function renderInventory() {
   $("mrChartView").classList.toggle("hidden", !chart);
   $("mrTableView").classList.toggle("hidden", chart);
   $("mrPivotXlsx").classList.toggle("hidden", chart);
-  $("mrDepot").classList.toggle("hidden", chart);   // Chart view shows charts only (no Depot Report table)
   $("mrViewSub").textContent = chart ? "Top 10 agents holding tanks (agent on the latest movement) — click a bar for the tanks"
                                      : "Tanks by current activity — click a number for the tanks";
   if (!chart) return renderMrPivot(tanks);
@@ -2762,13 +2752,6 @@ function renderInventory() {
   });
 
 }
-// collapse / expand a whole M&R section (Inventory Details, Depot Report)
-document.addEventListener("click", (e) => {
-  const b = e.target.closest(".sec-tg"); if (!b) return;
-  const card = $(b.dataset.sec), shut = !card.classList.contains("sec-collapsed");
-  card.classList.toggle("sec-collapsed", shut); b.setAttribute("aria-expanded", !shut);
-  if (!shut && card.id === "mrDetailsCard") renderInventory();   // redraw the chart once its box is visible again
-});
 $("mrViewToggle").onclick = (e) => {
   const m = e.target.closest("button[data-mode]")?.dataset.mode;
   if (m && m !== mr.mode) { mr.mode = m; store.set("sar.mrMode", m); renderInventory(); }
