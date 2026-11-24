@@ -283,7 +283,7 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v12";
+const MR_SNAPSHOT_ID = "mr-inventory-v13";
 const OFF_HIRE_ACTIVITY = "OFF HIRE";
 const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice", "tblContainerRepair"];
 
@@ -424,12 +424,12 @@ async function buildBillingPendency(db, tanks) {
   const current = new Map(tanks.map((t) => [t.c.toUpperCase(), t.activity]));
   const out = [];
   for (const [c, list] of stays) for (const st of list) {
-    if (st.date < +PEND_FROM) continue;
+    if (st.date < +PEND_FROM || !current.has(c)) continue;   // tanks now OFF HIRE (back with the lessor) are left out (user, 24 Nov)
     const ws = [...st.wos.values()].sort((a, b) => a.date - b.date);
     const status = ws.some((w) => w.booked) ? 2 : ws.length ? 1 : st.invs.size ? 3 : 0;   // a work order with the amount blank stays unbooked
     const refs = status === 3 ? [...st.invs].join(", ") : ws.map((w) => w.wo).join(", ");
     out.push([c, s(st.m.toLocationName) || "(No depot)", s(st.m.agentName), new Date(st.date).toISOString().slice(0, 10), st.imp,
-      s(st.m.activityName), status, refs, current.get(c) || "OFF HIRE"]);
+      s(st.m.activityName), status, refs, current.get(c)]);
   }
   return out.sort((a, b) => (a[3] < b[3] ? 1 : a[3] > b[3] ? -1 : 0));
 }
