@@ -2597,8 +2597,8 @@ function renderMr() {
   renderPending();
 }
 
-// ---- Billing Pendency: SARFD repair / cleaning lines on tanks now Depot In with a principal currency but no principal
-// amount (not yet billed). mr.data.pending rows: [tank, depot, agent, work order, date, charge, currency, amount, activity].
+// ---- Billing Pendency: SARFD work-order lines on tanks now Depot In whose cost is not posted (no M&R purchase invoice).
+// mr.data.pending rows: [tank, depot, agent, work order, date, charge, currency, amount, activity].
 // Depot rows (+ opens the tanks) × work-order months, in USD; lines in other currencies are listed, not added in.
 const PEND = { c: 0, depot: 1, agent: 2, wo: 3, date: 4, charge: 5, cur: 6, amt: 7, act: 8 };
 const pendMoney = (v) => (Math.round(v) < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("en-US");
@@ -2611,7 +2611,7 @@ function renderPending() {
   const months = [...new Set(usd.map((l) => l[PEND.date].slice(0, 7)))].filter(Boolean).sort();
   const sum = (ls) => { const o = { total: 0, m: {} }; for (const l of ls) { o.total += l[PEND.amt]; const mo = l[PEND.date].slice(0, 7); o.m[mo] = (o.m[mo] || 0) + l[PEND.amt]; } return o; };
   const tanks = new Set(all.map((l) => l[PEND.c])).size;
-  $("mrPendSub").textContent = `${n0(tanks)} Depot In tank${tanks === 1 ? "" : "s"} · ${n0(all.length)} work-order line${all.length === 1 ? "" : "s"} without a principal amount · $${pendMoney(sum(usd).total)} by work-order month`;
+  $("mrPendSub").textContent = `${n0(tanks)} Depot In tank${tanks === 1 ? "" : "s"} · ${n0(all.length)} work-order line${all.length === 1 ? "" : "s"} with cost not posted · $${pendMoney(sum(usd).total)} by work-order month`;
   const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${pendMoney(v)}</button>` : '<span class="dash">–</span>'}</td>`;
   const nums = (ls, base) => { const s = sum(ls); return cell(s.total, base, "rt") + months.map((mo) => cell(s.m[mo], `${base} data-m="${mo}"`)).join(""); };
   const byDepot = new Map();
@@ -2634,8 +2634,9 @@ function renderPending() {
     <tfoot><tr><td>GRAND TOTAL</td><td>${n0(new Set(usd.map((l) => l[PEND.c])).size)} tanks</td>${nums(usd, "")}</tr></tfoot>`;
   const byCur = new Map(); for (const l of other) byCur.set(l[PEND.cur], (byCur.get(l[PEND.cur]) || 0) + l[PEND.amt]);
   $("mrPendFoot").textContent = "Pending = a work-order line (SARFD tblContainerRepair) on a tank whose latest movement is Depot In "
-    + "(empty available, survey, washing / under cleaning, empty allocated to shipper, under repair) that has a principal currency but a blank principal amount. "
-    + "Amount = rate × quantity × exchange rate, as SARFD fills the principal amount; month = work-order date."
+    + "(empty available, survey, washing / under cleaning, empty allocated to shipper, under repair) whose cost is not posted: "
+    + "no M&R purchase invoice (MRPI) carries the work order number. Amount = the principal amount, else rate × quantity × exchange rate "
+    + "in the principal currency, else rate × quantity in the line's own currency; month = work-order date."
     + (other.length ? ` Not in the USD totals: ${[...byCur].map(([c, v]) => `${c} ${pendMoney(v)}`).join(", ")} (${other.length} line${other.length === 1 ? "" : "s"}) — in Export to Excel.` : "");
 }
 $("mrPendSearch").oninput = (e) => { mr.pendQ = e.target.value; renderPending(); };
@@ -2658,7 +2659,7 @@ const PEND_WIDTHS = [14, 26, 30, 30, 16, 14, 36, 9, 14];
 function openPendLines(title, ls) {
   mr.pendLines = { title, ls };
   $("pTitle").textContent = `Billing Pendency › ${title}`;
-  $("pSub").textContent = `${n0(ls.length)} line${ls.length === 1 ? "" : "s"} · $${pendMoney(ls.reduce((a, l) => a + l[PEND.amt], 0))} without a principal amount`;
+  $("pSub").textContent = `${n0(ls.length)} line${ls.length === 1 ? "" : "s"} · $${pendMoney(ls.reduce((a, l) => a + l[PEND.amt], 0))} cost not posted`;
   $("pTable").innerHTML = `<thead><tr><th>Tank No</th><th>Tank Status</th><th>Depot</th><th>Work Order</th><th>Date</th><th>Charge</th><th class="amt">Amount</th></tr></thead><tbody>`
     + ls.map((l) => `<tr><td class="mono">${esc(l[PEND.c])}</td><td>${esc(l[PEND.act])}</td><td class="name" title="${esc(l[PEND.depot])}">${esc(l[PEND.depot])}</td>`
       + `<td class="mono">${esc(l[PEND.wo])}</td><td>${l[PEND.date] ? shortDate(l[PEND.date]) : ""}</td><td class="name" title="${esc(l[PEND.charge])}">${esc(l[PEND.charge])}</td>`
