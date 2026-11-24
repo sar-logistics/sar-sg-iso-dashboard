@@ -1064,7 +1064,6 @@
 <main id="mrPage" class="hidden">
   <div class="alert hidden" id="mrErr" role="alert"></div>
   <div id="mrInventory" class="mr-tab">
-    <div class="kpis mr-kpis" id="mrKpis"></div>
     <!-- Inventory Details: one card with the Table / Chart switch, the export button and the table or chart -->
     <section class="card panel sec-collapsed" id="mrDetailsCard">   <!-- starts collapsed -->
       <div class="tools" style="justify-content:space-between">
@@ -1791,7 +1790,7 @@ function openMrSection(id) {
   card.classList.remove("sec-collapsed"); card.querySelector(".sec-tg")?.setAttribute("aria-expanded", "true");
   if (id === "mrDetailsCard" && mr.data) renderInventory();   // the chart needs a visible box
   requestAnimationFrame(() => {   // land below the sticky top bar and KPI row
-    const top = $("topbar").getBoundingClientRect().height + ($("mrKpis").offsetParent && getComputedStyle($("mrKpis")).position === "sticky" ? $("mrKpis").getBoundingClientRect().height : 0);
+    const top = getComputedStyle($("topbar")).position === "static" ? 0 : $("topbar").getBoundingClientRect().height;
     scrollTo({ top: card.getBoundingClientRect().top + scrollY - top - 12, behavior: "smooth" });
   });
 }
@@ -2612,14 +2611,13 @@ function setMrData(d) {
 async function loadMr() {
   $("mrErr").classList.add("hidden");
   $("refreshBtn").disabled = true;
-  if (!mr.data) { $("mrKpis").innerHTML = '<div class="skel"></div>'.repeat(5); $("mrSub").textContent = "Loading tank inventory…"; }
+  if (!mr.data) $("mrSub").textContent = "Loading tank inventory…";
   try {
     setMrData(await api("/api/mongo", { dataset: "mr" }));
     renderMr();
   } catch (e) {
     if (e.message === "signed out" || e.message === "no access") return;
     $("mrErr").textContent = "Could not load M&R data: " + e.message; $("mrErr").classList.remove("hidden");
-    if (!mr.data) $("mrKpis").innerHTML = "";
   } finally { $("refreshBtn").disabled = false; }
 }
 $("mrPrincipal").onchange = (e) => { mr.principal = e.target.value; renderMr(); };
@@ -2733,17 +2731,7 @@ $("mrPendXlsx").onclick = () => {   // the depot × month table and every depot 
 
 // ---- Total Inventory
 function renderInventory() {
-  const tanks = mrTanks(), total = tanks.length;
-  const by = Object.fromEntries(MR_BUCKETS.map((b) => [b, 0]));
-  for (const t of tanks) by[t.bucket]++;
-  const avail = tanks.filter((t) => t.activity === "EMPTY AVAILABLE").length, alloc = tanks.filter((t) => t.activity === "EMPTY ALLOCATED TO SHIPPER").length;
-  const pct = (v) => (total ? `${(v / total * 100).toFixed(1)}% of tanks` : "");
-  const card = (key, label, value, note, color) => `<button class="kpi" data-bucket="${key}" style="border-top-color:${color}">
-      <div class="lbl">${label}</div><div class="val">${n0(value)}</div><div class="note muted">${note}</div></button>`;
-  $("mrKpis").innerHTML = card("", "Total Tanks", total, "In the fleet (not off-hired)", "#1E3A8A")
-    + MR_BUCKETS.map((b) => card(b, MR_LABEL[b] || b, by[b],
-        b === "Empty" ? `${n0(avail)} available · ${n0(alloc)} allocated` : pct(by[b]),
-        MR_COLORS[b])).join("");
+  const tanks = mrTanks(), total = tanks.length;   // (no KPI cards above the sections: removed at the user's request, 24 Nov 2026)
 
   // Table and Chart are separate views; only the visible one is drawn (Chart.js can't size a hidden canvas).
   const chart = mr.mode === "chart";
@@ -2784,11 +2772,6 @@ document.addEventListener("click", (e) => {
 $("mrViewToggle").onclick = (e) => {
   const m = e.target.closest("button[data-mode]")?.dataset.mode;
   if (m && m !== mr.mode) { mr.mode = m; store.set("sar.mrMode", m); renderInventory(); }
-};
-$("mrKpis").onclick = (e) => {
-  const b = e.target.closest(".kpi"); if (!b) return;
-  const k = b.dataset.bucket;
-  openTanks(k ? { title: MR_LABEL[k] || k, bucket: k } : { title: "All tanks" });
 };
 
 // Tanks by current activity (largest first); click a number for the tanks
