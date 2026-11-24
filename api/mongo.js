@@ -283,7 +283,7 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v11";
+const MR_SNAPSHOT_ID = "mr-inventory-v12";
 const OFF_HIRE_ACTIVITY = "OFF HIRE";
 const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice", "tblContainerRepair"];
 
@@ -387,8 +387,11 @@ async function buildBillingPendency(db, tanks) {
     const list = [];
     for (const m of ms) {
       if (PEND_ENTRY.includes(s(m.activityName).toUpperCase())) {
-        const imp = U(m.importBlNo);
-        list.push({ m, date: +new Date(m.activityDate), imp, bls: new Set(imp ? [imp] : []), wos: new Map(), invs: new Set() });
+        const imp = U(m.importBlNo), date = +new Date(m.activityDate), last = list[list.length - 1];
+        // SARFD sometimes has the same entry twice (e.g. SLZU2907217, 22 May 26): an entry with the same import BL as the
+        // tank's previous entry, or on the same day, is the same depot visit
+        if (last && ((imp && imp === last.imp) || new Date(date).toISOString().slice(0, 10) === new Date(last.date).toISOString().slice(0, 10))) continue;
+        list.push({ m, date, imp, bls: new Set(imp ? [imp] : []), wos: new Map(), invs: new Set() });
       } else if (list.length && U(m.exportBlNo)) list[list.length - 1].bls.add(U(m.exportBlNo));
     }
     if (list.length) stays.set(c, list);
