@@ -649,6 +649,7 @@
   body.finance-only #sideNav > a:not([data-page="fin"]), body.finance-only #perfSub, body.finance-only #mrNavSub { display: none !important; }
   /* M&R users: only M&R Operations and its sub-items */
   body.mr-only #sideNav > a:not([data-page="mr"]), body.mr-only #perfSub { display: none !important; }
+  body.finance-only #insSub, body.mr-only #insSub { display: none !important; }
   #tuTable tr.tu-sec td { font-weight: 700; color: var(--ink); border-top: 2px solid var(--line); }
 </style>
 </head>
@@ -673,14 +674,14 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M8 21v-6h8v6M8 12h8"/></svg>
       Current Tank Inventory Status
     </a>
-    <a href="/" data-page="dep">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 17h20l-2 4H4z"/><rect x="6" y="9" width="12" height="6" rx="3"/><path d="M12 9V5M9 5h6"/></svg>
-      Tank Deployment
+    <a href="/" data-page="dep" data-pages="dep,tu" data-group="ins">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5M8 13v-2M11 13V9M14 13v-3"/></svg>
+      Tank Insights<span class="chev-btn" role="button" tabindex="0" aria-label="Show or hide the Tank Insights reports" title="Show / hide"><span class="chev" aria-hidden="true"></span></span>
     </a>
-    <a href="/" data-page="tu">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="8" width="20" height="9" rx="4.5"/><path d="M6 17v2M18 17v2"/><circle cx="12" cy="4.5" r="2.5"/><path d="M12 3.6v.9l.6.5"/></svg>
-      Tank Utilisation
-    </a>
+    <div class="subnav hidden" id="insSub">
+      <a href="/" class="sub" data-page="dep"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 17h20l-2 4H4z"/><rect x="6" y="9" width="12" height="6" rx="3"/><path d="M12 9V5M9 5h6"/></svg>Tank Deployment</a>
+      <a href="/" class="sub" data-page="tu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="8" width="20" height="9" rx="4.5"/><path d="M6 17v2M18 17v2"/><circle cx="12" cy="4.5" r="2.5"/><path d="M12 3.6v.9l.6.5"/></svg>Tank Utilisation</a>
+    </div>
     <a href="/" data-page="fin">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
       Finance
@@ -1720,7 +1721,7 @@ function route(next) {
   if ((page === "admin" || page === "usage" || page === "log") && !isAdmin()) page = "sales";
   if (onlyPage()) page = currentPage = onlyPage();
   for (const a of document.querySelectorAll(".side nav a:not(.sub)")) {
-    if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    if (a.dataset.pages ? a.dataset.pages.split(",").includes(page) : a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
   markPerfSub(page);
   $("pageTitle").textContent = PAGES[page];
@@ -1778,7 +1779,10 @@ for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
     Object.assign(state, { detail: "billing", mode: "table", detailQ: "", detailAll: false }); $("detailSearch").value = ""; perfOpen = true;
   }
   if (a.dataset.page === "mr") { mrOpen = true; mrSec = a.dataset.sec || "mrDetailsCard"; }   // M&R itself opens Inventory Details
-  if (perf) mrOpen = false; else if (a.dataset.page === "mr") perfOpen = false;   // one report group open at a time keeps the sidebar short
+  const ins = a.dataset.group === "ins" || (a.classList.contains("sub") && ["dep", "tu"].includes(a.dataset.page));
+  if (ins) insOpen = true;   // Tank Insights itself opens Tank Deployment, sub-items shown
+  if (perf) { mrOpen = false; insOpen = false; } else if (a.dataset.page === "mr") { perfOpen = false; insOpen = false; }
+  else if (ins) { perfOpen = false; mrOpen = false; }   // one report group open at a time keeps the sidebar short
   route(a.dataset.page);
   if (a.dataset.page === "mr") openMrSection(mrSec);
   if (perf && state.lines.length) render();
@@ -1788,9 +1792,11 @@ for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
 let perfOpen = true;    // Performance opens first with its sub-items shown; the arrow next to Performance shows / hides them
 // Inventory Details / Depot Report / Billing Pendency sit under M&R Operations the same way: each sub-item shows only that section.
 let mrOpen = false, mrSec = "mrDetailsCard";
+// Tank Deployment / Tank Utilisation sit under Tank Insights (user, 25 Nov)
+let insOpen = false;
 const MR_SEC_BOX = { mrDetailsCard: "mrDetailsCard", mrDepotCard: "mrDepot", mrPendCard: "mrPending" };
 function toggleSub(el) {
-  if (el.closest('a[data-page="mr"]')) mrOpen = !mrOpen; else perfOpen = !perfOpen;
+  if (el.closest('a[data-page="mr"]')) mrOpen = !mrOpen; else if (el.closest('a[data-group="ins"]')) insOpen = !insOpen; else perfOpen = !perfOpen;
   markPerfSub();
 }
 function openMrSection(id) {
@@ -1803,11 +1809,14 @@ function openMrSection(id) {
 function markPerfSub(page = currentPage) {
   $("perfSub").classList.toggle("hidden", !perfOpen);
   $("mrNavSub").classList.toggle("hidden", !mrOpen);
+  $("insSub").classList.toggle("hidden", !insOpen);
+  document.querySelector('.side nav a[data-group="ins"]').setAttribute("aria-expanded", insOpen);
   document.querySelector('.side nav a[data-page="sales"]:not(.sub)').setAttribute("aria-expanded", perfOpen);
   document.querySelector('.side nav a[data-page="mr"]:not(.sub)').setAttribute("aria-expanded", mrOpen);
   for (const a of document.querySelectorAll(".side nav a.sub")) {
     const on = a.dataset.page === "sales" ? page === "sales" && state.mode === "table" && a.dataset.detail === state.detail
-      : page === "mr" && !!mrSec && a.dataset.sec === mrSec;
+      : a.dataset.page === "mr" ? page === "mr" && !!mrSec && a.dataset.sec === mrSec
+      : a.dataset.page === page;
     if (on) a.setAttribute("aria-current", "true"); else a.removeAttribute("aria-current");
   }
 }
