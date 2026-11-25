@@ -540,7 +540,7 @@
   .user-card-email { font-size: 12.5px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "JetBrains Mono", monospace; }
   .user-card-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .user-card-role { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
-  .role-admin { background: #FDE3DE; color: #C24A2E; } .role-viewer { background: #E1F5EA; color: #1F8A4C; } .role-off { background: var(--paper); color: var(--ink-soft); }
+  .role-admin { background: #FDE3DE; color: #C24A2E; } .role-finance { background: #E4EBFA; color: #1E3A8A; } .role-viewer { background: #E1F5EA; color: #1F8A4C; } .role-off { background: var(--paper); color: var(--ink-soft); }
   .user-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .user-card-icon-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 7px; background: var(--card); color: var(--ink-soft); }
   .user-card-icon-btn:hover { background: var(--paper); color: var(--ink); }
@@ -645,6 +645,8 @@
   @media (prefers-reduced-motion: reduce) { #login .pa-full * { animation: none !important; } }
   /* Report downloads switched off (user, 2026-11-25): every Export to Excel / Export CSV button except Usage Analytics. */
   #mrPivotXlsx,#mrDepotXlsx,#mrPendXlsx,#invXlsx,#depXlsx,#quoXlsx,#tuXlsx,#finXlsx,#tXlsx,#pXlsx,#bXlsx,#uXlsx,#qXlsx,#fXlsx,#sCsv,#mCsv{display:none!important}
+  /* Finance users: only the Finance report in the menu */
+  body.finance-only #sideNav > a:not([data-page="fin"]), body.finance-only #perfSub, body.finance-only #mrNavSub { display: none !important; }
 </style>
 </head>
 <body>
@@ -1276,7 +1278,7 @@
       <label class="modal-field"><span>Full Name <span class="required-star">*</span></span><input type="text" id="umName" placeholder="e.g. Rahul Sharma" maxlength="100" required></label>
       <label class="modal-field"><span>Email <span class="required-star">*</span></span><input type="email" id="umEmail" placeholder="rahul@sarlogisolutions.com" required></label>
       <label class="modal-field"><span>Role <span class="required-star">*</span></span>
-        <select id="umRole" required><option value="">Select a role</option><option value="admin">Admin</option><option value="viewer">Viewer</option></select></label>
+        <select id="umRole" required><option value="">Select a role</option><option value="admin">Admin</option><option value="finance">Finance (Finance report only)</option><option value="viewer">Viewer</option></select></label>
       <label class="modal-field" id="umStatusWrap"><span>Status</span>
         <select id="umStatus"><option value="active">Active</option><option value="disabled">Disabled (can't sign in)</option></select></label>
       <div class="modal-error hidden" id="umError"></div>
@@ -1298,7 +1300,7 @@
     </div>
     <p class="import-modal-hint">Expected columns: <b>Name</b>, <b>Email</b>, and optionally <b>Role</b> (Admin or Viewer). Column names are matched loosely (not case-sensitive).</p>
     <label class="modal-field"><span>Default Role <span style="text-transform:none;font-weight:400">(used for any row without its own Role)</span></span>
-      <select id="importDefaultRole"><option value="viewer">Viewer</option><option value="admin">Admin</option><option value="">None — require a Role column</option></select></label>
+      <select id="importDefaultRole"><option value="viewer">Viewer</option><option value="admin">Admin</option><option value="finance">Finance</option><option value="">None — require a Role column</option></select></label>
     <div id="importSummary"></div>
     <div class="import-preview-table-wrap">
       <table class="import-preview-table"><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr></thead><tbody id="importBody"></tbody></table>
@@ -1690,7 +1692,7 @@ async function api(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
   const data = await r.json().catch(() => ({}));
   if (r.status === 401) { showLogin(data.error || "Please sign in again."); throw new Error("signed out"); }
-  if (r.status === 403 && data.code !== "admin_only") { showLogin(data.error || "This Google account doesn't have access."); throw new Error("no access"); }
+  if (r.status === 403 && data.code !== "admin_only" && data.code !== "finance_only") { showLogin(data.error || "This Google account doesn't have access."); throw new Error("no access"); }
   if (!r.ok) throw new Error(data.error || r.statusText);
   return data;
 }
@@ -1700,6 +1702,9 @@ $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } c
 // ============================================================ sidebar + pages
 const PAGES = { sales: "Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", tu: "Tank Utilisation", dep: "Tank Deployment", fin: "Finance", quo: "Quotation", usage: "Usage Analytics", admin: "Admin Panel", log: "Dashboard Log" };
 const isAdmin = () => state.me?.role === "admin";
+// Finance users (Admin Panel → Finance) see only the Finance report; the server refuses them every other data set too.
+const isFinanceOnly = () => state.me?.role === "finance";
+const ROLE_LABEL = { admin: "Admin", finance: "Finance", viewer: "Viewer" };
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
 let currentPage = "sales";   // after sign-in Performance (Billing Details) opens first
 function route(next) {
@@ -1707,6 +1712,7 @@ function route(next) {
   if (location.hash || location.pathname !== "/" || location.search) history.replaceState(null, "", "/");
   let page = PAGES[currentPage] ? currentPage : "sales";
   if ((page === "admin" || page === "usage" || page === "log") && !isAdmin()) page = "sales";
+  if (isFinanceOnly()) page = currentPage = "fin";
   for (const a of document.querySelectorAll(".side nav a:not(.sub)")) {
     if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -1804,6 +1810,7 @@ function showUser(me) {
   state.me = me;
   $("adminHead").classList.toggle("hidden", me.role !== "admin");
   $("adminNav").classList.toggle("hidden", me.role !== "admin");
+  document.body.classList.toggle("finance-only", me.role === "finance");
   const name = me.name || me.email;
   $("who").textContent = `${name} · ${me.role}`;
   $("meName").textContent = name; $("meName").title = me.email;
@@ -1836,8 +1843,9 @@ async function loadData(withUser) {
     const { results } = await api("/api/mongo-batch", { requests });
     const [sales, me] = results;
     if (me && !me.ok) throw new Error(me.error);
-    if (!sales.ok) throw new Error(sales.error);
     if (me) { showUser(me.data); route(); }
+    if (isFinanceOnly()) return;   // no Performance data for Finance users (the server refuses it)
+    if (!sales.ok) throw new Error(sales.error);
     // the Charges filter opens on every charge (the "Default" button still picks the 5 main ones); a refresh keeps
     // the selection, and "all" stays all even when new charges arrive
     const wasAll = !state.lines.length || allChargesOn();
@@ -3973,7 +3981,7 @@ function writeXlsx(file, sheets) {
 }
 
 // ============================================================ admin panel: users (layout follows the reference dashboard)
-const ROLE_GROUPS = [["admin", "Admin"], ["viewer", "Viewer"]];
+const ROLE_GROUPS = [["admin", "Admin"], ["finance", "Finance"], ["viewer", "Viewer"]];
 const AVATAR_COLORS = ["#2F6FB0", "#0EA6A6", "#1F9D5A", "#C99A3B", "#D6534A", "#7B5EA7", "#173A66"];
 const avatarColor = (s) => { let h = 0; for (const ch of s || "") h = (h * 31 + ch.charCodeAt(0)) % 997; return AVATAR_COLORS[h % AVATAR_COLORS.length]; };
 const initials = (s) => { const p = (s || "").replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean); return ((p[0]?.[0] || "?") + (p[1]?.[0] || "")).toUpperCase(); };
@@ -4006,7 +4014,7 @@ function exportUsage() {
   const status = (u) => (u.notListed ? "Not in user list" : u.disabled ? "Disabled" : "Active");
   const when = (iso) => (iso ? new Date(iso) : "Never");
   const users = d.users.map((u, i) => ({
-    "#": i + 1, Name: u.name || "", Email: u.email, Role: u.role === "admin" ? "Admin" : "Viewer",
+    "#": i + 1, Name: u.name || "", Email: u.email, Role: ROLE_LABEL[u.role] || "Viewer",
     "Total Logins": u.totalLogins, [`Last ${d.days} Days`]: u.logins30, "Last Login": when(u.lastLogin), Status: status(u),
   }));
   const daily = d.daily.map((x) => ({ Date: new Date(x.date + "T00:00"), Logins: x.logins, Users: x.users }));
@@ -4047,7 +4055,7 @@ function renderUsage() {
       <td>${i + 1}</td>
       <td><span class="name-avatar" style="background:${avatarColor(who)}">${esc(initials(who))}</span>${u.name ? esc(u.name) : '<span class="blank">–</span>'}${u.email === me ? '<span class="you">You</span>' : ""}</td>
       <td class="mono-cell">${esc(u.email)}</td>
-      <td><span class="role-pill role-${u.role}">${u.role === "admin" ? "Admin" : "Viewer"}</span></td>
+      <td><span class="role-pill role-${u.role}">${ROLE_LABEL[u.role] || "Viewer"}</span></td>
       <td><div class="login-bar-wrap"><div class="login-bar" style="width:${Math.round(u.totalLogins / max * 90)}px"></div><span class="login-bar-value">${u.totalLogins}</span></div></td>
       <td>${u.logins30}</td>
       <td title="${u.lastLogin ? esc(ago(u.lastLogin)) : ""}">${fmtLogin(u.lastLogin)}</td>
@@ -4230,7 +4238,7 @@ function validateImport() {
     const existing = byEmail.get(r.email);
     if (!r.name || !EMAIL_OK.test(r.email)) return { ...out, status: "error", reason: !r.name ? "Missing name" : "Missing or invalid email" };
     if (!role) return { ...out, status: "error", reason: "Missing Role (pick a Default Role above)" };
-    if (!["admin", "viewer"].includes(role)) return { ...out, status: "error", reason: `Unknown role "${r.role}"` };
+    if (!ROLE_LABEL[role]) return { ...out, status: "error", reason: `Unknown role "${r.role}"` };
     if (seen.has(r.email)) return { ...out, status: "error", reason: "Duplicate email in this file" };
     seen.add(r.email);
     if (existing?.locked) return { ...out, status: "error", reason: "Set in Vercel (ADMIN_EMAILS)" };
@@ -4247,7 +4255,7 @@ function validateImport() {
     nSame && `<span>${nSame} unchanged</span>`, nErr && `<span class="import-status-error">${nErr} skipped</span>`].filter(Boolean).join(" &nbsp;•&nbsp; ");
   const cls = { ok: "import-status-ok", update: "import-status-update", error: "import-status-error", unchanged: "" };
   $("importBody").innerHTML = importChecked.map((r) => `<tr><td>${r.n}</td><td>${esc(r.name) || "–"}</td><td class="mono">${esc(r.email) || "–"}</td>
-    <td>${r.role ? (r.role === "admin" ? "Admin" : r.role === "viewer" ? "Viewer" : esc(r.role)) : "–"}</td><td><span class="${cls[r.status]}">${esc(r.reason)}</span></td></tr>`).join("");
+    <td>${r.role ? (ROLE_LABEL[r.role] || esc(r.role)) : "–"}</td><td><span class="${cls[r.status]}">${esc(r.reason)}</span></td></tr>`).join("");
   const n = nNew + nUpd;
   $("importConfirm").textContent = n ? `Import / Update ${n} Row${n === 1 ? "" : "s"}` : "Nothing To Do";
   $("importConfirm").disabled = !n;

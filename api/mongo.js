@@ -5,6 +5,7 @@
 //   POST /api/mongo  { dataset: "mr" }    -> current tank inventory for M&R Operations (signed in)
 //   POST /api/mongo  { dataset: "deploy" } -> export BLs with their tanks for Tank Deployment (signed in)
 //   POST /api/mongo  { dataset: "finance" } -> open receivable / payable invoices with due dates (signed in)
+//   Role "finance" may only ask for me, finance and financeRemarks; everything else is refused (403 finance_only).
 //   POST /api/mongo  { dataset: "financeRemarks" } -> remarks per party (signed in)
 //   POST /api/mongo  { action: "saveFinanceRemark", side: "ar"|"ap", party, remark?, onAccount? } -> remarks  (admins;
 //                    onAccount: number = amount received / paid on account, null = clear and use SARFD's figure)
@@ -47,15 +48,17 @@ export class HttpError extends Error {
 
 // ---------------------------------------------------------------- sign-in
 
+const normRole = (r) => (r === "admin" || r === "finance" ? r : "viewer");
 const list = (v) => (v || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
-/** admin: ADMIN_EMAILS or dashboardUsers role "admin"; viewer: dashboardUsers or ALLOWED_DOMAINS. */
+/** admin: ADMIN_EMAILS or dashboardUsers role "admin"; finance: dashboardUsers role "finance" (Finance report only);
+ *  viewer: dashboardUsers or ALLOWED_DOMAINS. */
 export async function roleFor(email) {
   const e = email.toLowerCase();
   if (list(process.env.ADMIN_EMAILS).includes(e)) return "admin";
   const db = await getDb();
   const user = await db.collection("dashboardUsers").findOne({ email: e, disabled: { $ne: true } }, { projection: { role: 1 } });
-  if (user) return user.role === "admin" ? "admin" : "viewer";
+  if (user) return normRole(user.role);
   if (list(process.env.ALLOWED_DOMAINS).includes(e.split("@")[1])) return "viewer";
   return null;
 }
@@ -1015,7 +1018,7 @@ async function saveFinanceRemark(body, user) {
 // ---------------------------------------------------------------- user management (admins)
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ROLES = ["admin", "viewer"];
+const ROLES = ["admin", "finance", "viewer"];
 
 function requireAdmin(user) {
   if (user.role !== "admin") throw new HttpError(403, "Only admins can do this", "admin_only");
@@ -1026,7 +1029,7 @@ async function listUsers() {
   const docs = await db.collection("dashboardUsers")
     .find({}, { projection: { _id: 0, email: 1, name: 1, role: 1, disabled: 1, addedAt: 1, addedBy: 1, updatedAt: 1, updatedBy: 1 } })
     .sort({ email: 1 }).toArray();
-  const users = docs.map((d) => ({ ...d, role: d.role === "admin" ? "admin" : "viewer", disabled: !!d.disabled }));
+  const users = docs.map((d) => ({ ...d, role: normRole(d.role), disabled: !!d.disabled }));
   for (const e of list(process.env.ADMIN_EMAILS)) {   // env admins can't be edited here
     const u = users.find((x) => x.email === e);
     if (u) Object.assign(u, { role: "admin", locked: true }); else users.push({ email: e, role: "admin", disabled: false, locked: true });
@@ -1039,7 +1042,7 @@ async function saveUser(body, user) {
   const email = String(body.email || "").trim().toLowerCase();
   if (!EMAIL_RE.test(email)) throw new HttpError(400, "Enter a valid email address");
   const role = body.role ?? "viewer";
-  if (!ROLES.includes(role)) throw new HttpError(400, "Role must be admin or viewer");
+  if (!ROLES.includes(role)) throw new HttpError(400, "Role must be admin, finance or viewer");
   const disabled = !!body.disabled;
   const name = body.name === undefined ? undefined : String(body.name).trim().slice(0, 100);
   if (email === user.email && (role !== "admin" || disabled)) throw new HttpError(400, "You can't remove your own admin access");
@@ -1084,7 +1087,7 @@ async function bulkSaveUsers(body, user) {
     if (envAdmins.includes(email)) { skip("Set in ADMIN_EMAILS"); continue; }
     if (email === user.email && role !== "admin") { skip("Can't remove your own admin access"); continue; }
     const cur = existing.get(email);
-    if (cur && (cur.role === "admin" ? "admin" : "viewer") === role && (!name || cur.name === name)) { result.unchanged++; continue; }
+    if (cur && normRole(cur.role) === role && (!name || cur.name === name)) { result.unchanged++; continue; }
     await users.updateOne(
       { email },
       { $set: { role, ...(name && { name }), updatedAt: now, updatedBy: user.email },
@@ -1208,6 +1211,10 @@ async function syncLog(user) {
 /** Runs one request ({ dataset } or { collection, pipeline }) for a signed-in user. */
 export async function runRequest(body, user) {
   if (!body || typeof body !== "object") throw new HttpError(400, "Request body must be JSON");
+  // Finance users see the Finance report and nothing else (user, 25 Nov 2026)
+  if (user.role === "finance" && !(["me", "finance", "financeRemarks"].includes(body.dataset) && !body.action)) {
+    throw new HttpError(403, "Your access is limited to the Finance report", "finance_only");
+  }
   if (body.dataset === "sales") return salesDataset();
   if (body.dataset === "mr") return mrDataset();
   if (body.dataset === "deploy") return deployDataset();
