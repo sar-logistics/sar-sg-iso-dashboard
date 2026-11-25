@@ -5,7 +5,7 @@
 //   POST /api/mongo  { dataset: "mr" }    -> current tank inventory for M&R Operations (signed in)
 //   POST /api/mongo  { dataset: "deploy" } -> export BLs with their tanks for Tank Deployment (signed in)
 //   POST /api/mongo  { dataset: "finance" } -> open receivable / payable invoices with due dates (signed in)
-//   Role "finance" may only ask for me, finance and financeRemarks; everything else is refused (403 finance_only).
+//   Role "finance" may only ask for me, finance and financeRemarks; role "mr" only me and mr; everything else is refused (403 report_only).
 //   POST /api/mongo  { dataset: "financeRemarks" } -> remarks per party (signed in)
 //   POST /api/mongo  { action: "saveFinanceRemark", side: "ar"|"ap", party, remark?, onAccount? } -> remarks  (admins;
 //                    onAccount: number = amount received / paid on account, null = clear and use SARFD's figure)
@@ -48,10 +48,13 @@ export class HttpError extends Error {
 
 // ---------------------------------------------------------------- sign-in
 
-const normRole = (r) => (r === "admin" || r === "finance" ? r : "viewer");
+// Roles limited to one report: they may only ask for these data sets (plus "me").
+const SINGLE_REPORT = { finance: ["finance", "financeRemarks"], mr: ["mr"] };
+const normRole = (r) => (r === "admin" || SINGLE_REPORT[r] ? r : "viewer");
 const list = (v) => (v || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
-/** admin: ADMIN_EMAILS or dashboardUsers role "admin"; finance: dashboardUsers role "finance" (Finance report only);
+/** admin: ADMIN_EMAILS or dashboardUsers role "admin"; finance / mr: dashboardUsers role "finance" (Finance report only)
+ *  or "mr" (M&R Operations only);
  *  viewer: dashboardUsers or ALLOWED_DOMAINS. */
 export async function roleFor(email) {
   const e = email.toLowerCase();
@@ -1018,7 +1021,7 @@ async function saveFinanceRemark(body, user) {
 // ---------------------------------------------------------------- user management (admins)
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ROLES = ["admin", "finance", "viewer"];
+const ROLES = ["admin", "finance", "mr", "viewer"];
 
 function requireAdmin(user) {
   if (user.role !== "admin") throw new HttpError(403, "Only admins can do this", "admin_only");
@@ -1042,7 +1045,7 @@ async function saveUser(body, user) {
   const email = String(body.email || "").trim().toLowerCase();
   if (!EMAIL_RE.test(email)) throw new HttpError(400, "Enter a valid email address");
   const role = body.role ?? "viewer";
-  if (!ROLES.includes(role)) throw new HttpError(400, "Role must be admin, finance or viewer");
+  if (!ROLES.includes(role)) throw new HttpError(400, "Role must be admin, finance, mr or viewer");
   const disabled = !!body.disabled;
   const name = body.name === undefined ? undefined : String(body.name).trim().slice(0, 100);
   if (email === user.email && (role !== "admin" || disabled)) throw new HttpError(400, "You can't remove your own admin access");
@@ -1211,9 +1214,10 @@ async function syncLog(user) {
 /** Runs one request ({ dataset } or { collection, pipeline }) for a signed-in user. */
 export async function runRequest(body, user) {
   if (!body || typeof body !== "object") throw new HttpError(400, "Request body must be JSON");
-  // Finance users see the Finance report and nothing else (user, 25 Nov 2026)
-  if (user.role === "finance" && !(["me", "finance", "financeRemarks"].includes(body.dataset) && !body.action)) {
-    throw new HttpError(403, "Your access is limited to the Finance report", "finance_only");
+  // Finance users see only the Finance report, M&R users only M&R Operations (user, 25 Nov 2026)
+  const only = SINGLE_REPORT[user.role];
+  if (only && !((body.dataset === "me" || only.includes(body.dataset)) && !body.action)) {
+    throw new HttpError(403, `Your access is limited to the ${user.role === "mr" ? "M&R Operations" : "Finance"} report`, "report_only");
   }
   if (body.dataset === "sales") return salesDataset();
   if (body.dataset === "mr") return mrDataset();
