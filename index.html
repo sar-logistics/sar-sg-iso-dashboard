@@ -481,6 +481,7 @@
   .fin-table th.txt, .fin-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
   .fin-table td.party { font-weight: 600; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
   .fin-table th.gt, .fin-table td.gt { background: #F0F4FF; font-weight: 700; }
+  .fin-table th.due, .fin-table td.due { background: #FFF6E8; font-weight: 700; }
   .fin-table td.rem { width: 100%; min-width: 90px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); font-size: 12px; }
   .fin-table .neg, .fin-table .neg .num { color: var(--ink); }
   .fin-table th.acc, .fin-table td.acc { background: #F7F3FC; }
@@ -3745,6 +3746,11 @@ const fin = { data: null, remarks: new Map(), side: store.get("sar.finSide", "ar
 // Finance tables show whole dollars; the Excel exports keep cents.
 const usd2 = (v) => (Math.round(v) < 0 ? "−" : "") + "$" + Math.abs(Math.round(v)).toLocaleString("en-US");
 const overdueDays = (d) => Math.floor((Date.now() - new Date(d.due + "T00:00")) / DAY_MS);
+// Due = every overdue bracket added up (< 30 + 30–60 + 60–90 + > 90), shown after Not Due.
+const FIN_COLS = [FIN_AGES[0], ["due", "Due"], ...FIN_AGES.slice(1)];
+const finDue = (r) => r.d0 + r.d30 + r.d60 + r.d90;
+const finAgeLabel = (age) => age ? FIN_COLS.find(([k]) => k === age)[1] : "All";
+const finAgeIs = (d, age) => !age || (age === "due" ? finAge(d) !== "nd" : finAge(d) === age);
 const finAge = (d) => { const o = overdueDays(d); return o <= 0 ? "nd" : o <= 30 ? "d0" : o <= 60 ? "d30" : o <= 90 ? "d60" : "d90"; };
 const remKey = (side, party) => `${side}|${party.toUpperCase()}`;
 
@@ -3802,7 +3808,7 @@ function renderFin() {
   for (const b of $("finTabs").children) b.setAttribute("aria-pressed", b.dataset.side === fin.side);
   $("finTitle").textContent = S.title; $("finTableTitle").textContent = S.table;
   $("finSub").textContent = ""; $("finSub").title = "";   // no subtitle under the title (only "Loading…" while the data loads)
-  $("finFoot").innerHTML = `Ageing columns = open invoices (invoice amount less what has been knocked off against them), aged by days past the due date: Not Due (due date today or later), then 1–30 (< 30), 31–60, 61–90 and over 90 days.${fin.side === "ap" ? " Payables are shown as negative amounts, as in Syscon." : ""}
+  $("finFoot").innerHTML = `Ageing columns = open invoices (invoice amount less what has been knocked off against them), aged by days past the due date: Not Due (due date today or later), then 1–30 (< 30), 31–60, 61–90 and over 90 days. Due = all overdue brackets added up.${fin.side === "ap" ? " Payables are shown as negative amounts, as in Syscon." : ""}
     From / To pick open invoices by invoice date.`;
 
   const rows = finRows(), docs = finDocs();
@@ -3819,10 +3825,10 @@ function renderFin() {
     + card(FIN_AGES.find(([x]) => x === "d90")[1], sum.d90, `${n0(cnt.d90 || 0)} invoices${pctOf(sum.d90)}`, "#C24A2E", 'data-age="d90"');
 
   const cell = (v, party, age, cls = "") => `<td class="${cls}${v < 0 ? " neg" : ""}">${Math.abs(v) >= 0.005 ? `<button class="num" data-p="${esc(party)}"${age ? ` data-age="${age}"` : ""}>${usd2(v)}</button>` : ""}</td>`;
-  const body = rows.map((r) => `<tr><td class="txt party" title="${esc(r.party)}">${esc(r.party)}</td>${cell(r.total, r.party, "", "gt")}${FIN_AGES.map(([k]) => cell(r[k], r.party, k)).join("")}</tr>`).join("");   // Grand Total right after the party
-  $("finTable").innerHTML = `<thead><tr><th class="txt">${S.party}</th><th class="gt">Grand Total</th>${FIN_AGES.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
-    <tbody>${body || '<tr><td colspan="6" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
-    <tfoot><tr><td class="txt">Grand Total (${n0(rows.length)})</td><td class="gt">${usd2(sum.total)}</td>${FIN_AGES.map(([k]) => `<td class="${sum[k] < 0 ? "neg" : ""}">${usd2(sum[k])}</td>`).join("")}</tr></tfoot>`;
+  const body = rows.map((r) => `<tr><td class="txt party" title="${esc(r.party)}">${esc(r.party)}</td>${cell(r.total, r.party, "", "gt")}${FIN_COLS.map(([k]) => k === "due" ? cell(finDue(r), r.party, k, "due") : cell(r[k], r.party, k)).join("")}</tr>`).join("");   // Grand Total right after the party
+  $("finTable").innerHTML = `<thead><tr><th class="txt">${S.party}</th><th class="gt">Grand Total</th>${FIN_COLS.map(([k, l]) => `<th${k === "due" ? ' class="due"' : ""}>${l}</th>`).join("")}</tr></thead>
+    <tbody>${body || '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
+    <tfoot><tr><td class="txt">Grand Total (${n0(rows.length)})</td><td class="gt">${usd2(sum.total)}</td>${FIN_COLS.map(([k]) => { const v = k === "due" ? finDue(sum) : sum[k]; return `<td class="${k === "due" ? "due" : ""}${v < 0 ? " neg" : ""}">${usd2(v)}</td>`; }).join("")}</tr></tfoot>`;
 }
 async function saveFinNote(party, fields) {
   fin.editing = null; fin.editingAcc = null;   // first, so the input's blur doesn't save a second time
@@ -3837,8 +3843,8 @@ $("finTable").onclick = (e) => {
   const ea = e.target.closest("[data-edit-acc]"); if (ea) { fin.editing = null; fin.editingAcc = ea.dataset.editAcc; return renderFin(); }
   const ac = e.target.closest("[data-acc-p]"); if (ac) return openAccDetail(ac.dataset.accP);
   const b = e.target.closest("button.num"); if (!b) return;
-  const { p, age } = b.dataset, label = age ? FIN_AGES.find(([k]) => k === age)[1] : "All";
-  openFinDocs(`${p} › ${label}`, (d) => d.party === p && (!age || finAge(d) === age));
+  const { p, age } = b.dataset;
+  openFinDocs(`${p} › ${finAgeLabel(age)}`, (d) => d.party === p && finAgeIs(d, age));
 };
 $("finTable").onkeydown = (e) => {
   const inp = e.target.closest(".rem-input"); if (!inp) return;
@@ -3862,17 +3868,17 @@ $("finKpis").onclick = (e) => {
   const k = e.target.closest(".kpi"); if (!k) return;
   if (k.querySelector(".lbl")?.textContent === "On Account") return openAccDetail(null);
   if (k.dataset.age == null) return;
-  const age = k.dataset.age, label = age ? FIN_AGES.find(([x]) => x === age)[1] : "All";
-  openFinDocs(`${FIN_SIDES[fin.side].title} › ${label}`, (d) => !age || finAge(d) === age);
+  const age = k.dataset.age;
+  openFinDocs(`${FIN_SIDES[fin.side].title} › ${finAgeLabel(age)}`, (d) => finAgeIs(d, age));
 };
 $("finXlsx").onclick = () => {
   const S = FIN_SIDES[fin.side], rows = finRows();
-  const pivot = rows.map((r) => ({ [S.party]: r.party, "Grand Total": +r.total.toFixed(2), ...Object.fromEntries(FIN_AGES.map(([k, l]) => [l, +r[k].toFixed(2)])) }));
-  const sum = (k) => +rows.reduce((t, r) => t + r[k], 0).toFixed(2);
-  pivot.push({ [S.party]: "Grand Total", "Grand Total": sum("total"), ...Object.fromEntries(FIN_AGES.map(([k, l]) => [l, sum(k)])) });
+  const pivot = rows.map((r) => ({ [S.party]: r.party, "Grand Total": +r.total.toFixed(2), ...Object.fromEntries(FIN_COLS.map(([k, l]) => [l, +(k === "due" ? finDue(r) : r[k]).toFixed(2)])) }));
+  const sum = (k) => +rows.reduce((t, r) => t + (k === "due" ? finDue(r) : r[k]), 0).toFixed(2);
+  pivot.push({ [S.party]: "Grand Total", "Grand Total": sum("total"), ...Object.fromEntries(FIN_COLS.map(([k, l]) => [l, sum(k)])) });
   const parties = new Set(rows.map((r) => r.party));
   const docs = finDocs().filter((d) => parties.has(d.party)).map(finDocRow);
-  writeXlsx(`SAR_${S.title.replace(/ /g, "_")}_${todayIso()}.xlsx`, [[S.table, pivot, [44, 16, 18, 18, 18, 16]], ["Invoices", docs, [40, 22, 20, 12, 12, 8, 12, 14, 14, 14, 18, 22, 10], 3]]);
+  writeXlsx(`SAR_${S.title.replace(/ /g, "_")}_${todayIso()}.xlsx`, [[S.table, pivot, [44, 16, 16, 16, 16, 16, 16, 16]], ["Invoices", docs, [40, 22, 20, 12, 12, 8, 12, 14, 14, 14, 18, 22, 10], 3]]);
 };
 const finDocRow = (d) => ({ Party: d.party, "Reference No": d.ref, "Invoice No": d.invoiceNo, "Reference Date": new Date(d.date + "T00:00"), "Due Date": new Date(d.due + "T00:00"),
   "Credit Period": d.creditPeriod, "Overdue Days": overdueDays(d), "Invoice Amount": d.amount, "Adjusted Amount": d.adjusted, "Outstanding Amount": d.outstanding,
