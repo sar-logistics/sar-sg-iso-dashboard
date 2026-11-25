@@ -654,6 +654,7 @@
   body.finance-only #sideNav > a:not([data-page="fin"]), body.finance-only #perfSub, body.finance-only #mrNavSub { display: none !important; }
   /* M&R users: only M&R Operations and its sub-items */
   body.mr-only #sideNav > a:not([data-page="mr"]), body.mr-only #perfSub { display: none !important; }
+  #tuTable tr.tu-sec td { background: var(--paper); font-weight: 700; color: var(--ink); padding-top: 14px; border-top: 2px solid var(--line); text-align: left; }
 </style>
 </head>
 <body>
@@ -3484,9 +3485,10 @@ $("quoXlsx").onclick = () => {
 // and cost billed to it. Built by the API only from SARFD (tblContainerMovement, tblContainerTransaction, tblInvoice,
 // tblBL) — see buildTankStatus in api/mongo.js for how each invoice charge is put on tanks.
 const tu = { data: null, from: "2026-01", to: "", q: "", open: new Set(), drill: null, rows: [] };   // open = tanks showing their + rows
-const TU_FIRST = "2025-03";   // first month with invoices of both SAR companies
+const TU_FIRST = "2025-03";
+const TU_NONE = "Not on any tank";   // revenue / cost SARFD gives no tank for (sundry invoices, lessors' lease rent …)   // first month with invoices of both SAR companies
 const TU_STATE = { idle: "Idle", working: "Utilised", off: "Off hire" };
-const TU_VOUCHER = { PSI: "Principal Sales Invoice", SLI: "Sub Lease Invoice", MRI: "M&R Sales Invoice", CN: "Principal Credit Note",
+const TU_VOUCHER = { PSI: "Principal Sales Invoice", SLI: "Sub Lease Invoice", SDI: "Sundry Invoice", MRI: "M&R Sales Invoice", CN: "Principal Credit Note",
                      PICI: "Purchase Invoice Container Wise", PI: "Purchase Invoice" };
 const tuMoney = (v) => (Math.round(v) < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("en-US");
 const dayMs = 86400000, dayNo = (d) => Math.floor(Date.parse(d + "T00:00:00Z") / dayMs);
@@ -3500,6 +3502,9 @@ function tuExpand(data) {
     t.moves = t.moves.map(([d, a, st, loc, ag, ts, pol, pod]) => [d, w[a], ST[st], w[loc], w[ag], w[ts] || "", w[pol] || "", w[pod] || ""]);
     t.lines = t.lines.map(([d, k, v, no, ch, amt, how, ref]) => [d, k ? "rev" : "cost", v, no, w[ch], amt, how ? "e" : "s", w[ref]]);
   }
+  // money SARFD gives no tank for: counted in the Grand Total, shown on its own row
+  data.none = { c: TU_NONE, moves: [], lease: null,
+    lines: (data.noTank || []).map(([d, k, v, no, ch, amt, how, ref]) => [d, k ? "rev" : "cost", v, no, w[ch], amt, how ? "e" : "s", w[ref]]) };
   return data;
 }
 async function loadTu() {
@@ -3534,10 +3539,11 @@ function tuPeriods(t, fromM = tu.from, toM = tu.to) {
   return out;
 }
 // Per tank, per month: days idle / utilised and revenue / cost (by invoice date), for the chosen months
-function tuRows() {
+function tuRows(off = false) {
   const ms = monthsBetween(tu.from, tu.to), fromD = `${tu.from}-01`, toD = tuMonthEnd(tu.to), q = tu.q.trim().toLowerCase(), rows = [];
   const zero = () => Object.fromEntries(ms.map((m) => [m, 0]));
   for (const t of tu.data?.tanks || []) {
+    if (!!t.off !== off) continue;   // tanks now off hire have their own section at the bottom
     const m = { idle: zero(), work: zero(), rev: zero(), cost: zero() };
     for (const p of tuPeriods(t)) {
       const k = p.state === "idle" ? "idle" : p.state === "working" ? "work" : null; if (!k) continue;
@@ -3561,16 +3567,28 @@ function tuRows() {
   rows.sort((a, b) => (a.fleet ? a.work / a.fleet : 2) - (b.fleet ? b.work / b.fleet : 2) || b.idle - a.idle || a.c.localeCompare(b.c));   // lowest utilisation % first
   return rows;
 }
+// "Not on any tank": its revenue / cost by month in the chosen range
+function tuNone() {
+  const ms = monthsBetween(tu.from, tu.to), fromD = `${tu.from}-01`, toD = tuMonthEnd(tu.to);
+  const zero = () => Object.fromEntries(ms.map((m) => [m, 0])), r = { c: TU_NONE, m: { idle: zero(), work: zero(), rev: zero(), cost: zero() } };
+  for (const l of tu.data?.none?.lines || []) if (l[0] >= fromD && l[0] <= toD) r.m[l[1]][l[0].slice(0, 7)] += l[5];
+  r.rev = ms.reduce((a, mo) => a + r.m.rev[mo], 0); r.cost = ms.reduce((a, mo) => a + r.m.cost[mo], 0);
+  r.idle = r.work = r.fleet = 0; r.net = r.rev - r.cost;
+  return r;
+}
 // rows shown under each tank (and in the Grand Total block): k = monthly field, utilisation % is worked out from the days
 const TU_MEASURES = [["pct", "Utilisation %"], ["work", "Utilised Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Gross Profit (USD)"]];
 const TU_TANK_MORE = TU_MEASURES.filter(([k]) => !["pct", "work"].includes(k));   // under a tank's + (Utilised Days is always shown)
 function renderTu() {
   if (!tu.data) return;
-  const rows = tuRows(), ms = monthsBetween(tu.from, tu.to), dash = '<span class="dash">—</span>';
-  tu.rows = rows;
+  const rows = tuRows(), offRows = tuRows(true), ms = monthsBetween(tu.from, tu.to), dash = '<span class="dash">—</span>';
+  tu.rows = rows; tu.offRows = offRows;
+  const none = tu.q.trim() ? null : tuNone();   // left out while searching for tanks
+  const extra = [...offRows, ...(none ? [none] : [])];   // money only: their days are not fleet days
   $("tuSub").textContent = "";
   const sum = (k) => rows.reduce((a, r) => a + r[k], 0);
-  const fleet = sum("fleet"), idle = sum("idle"), rev = sum("rev"), cost = sum("cost"), idleNow = rows.filter((r) => r.last[2] === "idle").length;
+  const xsum = (k) => extra.reduce((a, r) => a + r[k], 0);
+  const fleet = sum("fleet"), idle = sum("idle"), rev = sum("rev") + xsum("rev"), cost = sum("cost") + xsum("cost"), idleNow = rows.filter((r) => r.last[2] === "idle").length;
   const card = (lbl, val, note, color) => `<div class="kpi" style="border-top-color:${color};cursor:default"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="note muted">${note}</div></div>`;
   const range = `${monthLabel(tu.from)} – ${monthLabel(tu.to)}`;
   $("tuKpis").innerHTML = card("Tanks", n0(rows.length), `${n0(idleNow)} idle right now`, "#1E3A8A")
@@ -3596,7 +3614,8 @@ function renderTu() {
   const row = (trCls, name, [gt, months]) => `<tr${trCls ? ` class="${trCls}"` : ""}>${name}${gt}${months}</tr>`;
   // fleet Grand Total rows at the top
   const all = { m: {}, fleet, idle, work: sum("work"), rev, cost };
-  for (const f of ["idle", "work", "rev", "cost"]) all.m[f] = Object.fromEntries(ms.map((mo) => [mo, rows.reduce((a, r) => a + r.m[f][mo], 0)]));
+  for (const f of ["idle", "work", "rev", "cost"]) all.m[f] = Object.fromEntries(ms.map((mo) => [mo, rows.reduce((a, r) => a + r.m[f][mo], 0)
+    + (f === "rev" || f === "cost" ? extra.reduce((a, r) => a + r.m[f][mo], 0) : 0)]));
   // the Grand Total block leaves out Utilised Days (shown under each tank)
   const gtMeasures = TU_MEASURES.filter(([k]) => k !== "work");
   const gtRows = gtMeasures.map(([k, h], i) => row(`gt1${i === gtMeasures.length - 1 ? " gt0" : ""}`, `<td class="nm">${h}</td>`, cells(all, k)));
@@ -3612,25 +3631,35 @@ function renderTu() {
     row("gt1", '<td class="nm" title="Month: utilised days ÷ tanks in the fleet that month. Grand Total: average of the monthly figures">Avg Utilised Days per Tank</td>',
       [`<td class="gt">${avgWork("")}</td>`, ms.map((mo) => `<td>${avgWork(mo)}</td>`).join("")]));
   let body = gtRows.join("");
-  for (const r of rows.slice(0, 1500)) {
+  if (none && (Math.round(none.rev) || Math.round(none.cost))) {
+    body += row("", `<td class="nm" title="Sundry invoices and charges SARFD gives no tank for (mostly lessors' lease rent invoices) — in the Grand Total, not on a tank"><b>${TU_NONE}</b></td>`,
+      [`<td class="gt"></td>`, ms.map(() => "<td></td>").join("")]);
+    for (const [k, h] of TU_TANK_MORE) body += row("sub", `<td class="nm">${h}</td>`, cells(none, k));
+  }
+  const tankRows = (list) => { for (const r of list) {
     const open = tu.open.has(r.c), tip = [r.lessor && `Lessor ${r.lessor}`, r.rate != null && `$${r.rate}/day`, r.last[1] && `Now: ${r.last[1]} at ${r.last[3] || "—"} since ${shortDate(r.last[0])}`].filter(Boolean).join(" · ");
     body += row("", `<td class="nm" title="${esc(tip)}"><button class="tg" data-tg="${esc(r.c)}" aria-expanded="${open}">${open ? "−" : "+"}</button>`
       + `<button class="num tk" data-c="${esc(r.c)}">${esc(r.c)}</button>${r.split ? " *" : ""}<span class="tu-now ${r.last[2] || ""}">${r.last[2] ? esc(r.last[5] || TU_STATE[r.last[2]]) : ""}</span></td>`, cells(r, "pct"));
     body += row("sub", '<td class="nm">Utilised Days</td>', cells(r, "work"));   // always shown under the tank
     if (open) for (const [k, h] of TU_TANK_MORE) body += row("sub", `<td class="nm">${h}</td>`, cells(r, k));
+  } };
+  tankRows(rows.slice(0, 1500));
+  if (offRows.length) {   // tanks now off hire (back with the lessor), at the bottom
+    body += `<tr class="tu-sec"><td class="nm" title="Latest movement OFF HIRE (back with the lessor): days before the off hire shown, their revenue and cost are in the Grand Total">Off Hire Tanks (${n0(offRows.length)})</td><td class="gt"></td>${ms.map(() => "<td></td>").join("")}</tr>`;
+    tankRows(offRows);
   }
-  if (!rows.length) body += `<tr><td colspan="${ms.length + 2}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`;
+  if (!rows.length && !offRows.length) body += `<tr><td colspan="${ms.length + 2}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`;
   $("tuTable").innerHTML = `<thead><tr><th class="nm">Tank No</th><th class="gt">Grand Total</th>${ms.map((mo) => `<th>${monthLabel(mo)}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
-  $("tuToggleAll").textContent = rows.length && rows.every((r) => tu.open.has(r.c)) ? "Collapse all" : "Expand all";
+  $("tuToggleAll").textContent = rows.length && [...rows, ...offRows].every((r) => tu.open.has(r.c)) ? "Collapse all" : "Expand all";
 
   const u = tu.data.unassigned || {};
   $("tuFoot").textContent = "Idle = empty available, survey, washing / under cleaning, empty allocated to shipper, under repair. "
     + "Utilised = every other status (with consignee, with shipper, in transit, sub lease on hire, gate in port laden, depot transfer, depot to port empty), and activities not on the Tank Status list. "
-    + `Off hire is left out: tanks whose latest movement is OFF HIRE are not shown${tu.data.offHire ? ` (${n0(tu.data.offHire)} tanks)` : ""}, nor off-hire periods of tanks hired again. `
+    + "Tanks whose latest movement is OFF HIRE are listed at the bottom under Off Hire Tanks; their revenue and cost are in the Grand Total, their days are not (off-hire periods are never counted). "
     + "Gross Profit = revenue − cost. Each movement lasts until the tank's next one; Utilisation % = utilised days ÷ days in fleet. "
-    + "Revenue = principal sales, sub-lease and M&R sales invoices less principal credit notes; cost = container-wise and BL purchase invoices (lease rent, storage, cleaning, repair, freight …), by invoice month, USD. "
+    + "Revenue = principal sales, sub-lease, sundry and M&R sales invoices less principal credit notes; from Jan 2026 the same rules as Performance (credit notes against pre-2026 invoices and the old company after Jan-26 left out), so the Grand Total revenue matches Billing Details; cost = container-wise and BL purchase invoices (lease rent, storage, cleaning, repair, freight …), by invoice month, USD. "
     + "A charge goes to a tank from the invoice's own per-tank amounts, else its tank list or BL tanks (exact when priced per tank); * = includes charges split equally across the tanks of an invoice. "
-    + `Not on any tank (no tank list in SARFD, all dates): revenue $${tuMoney(u.rev || 0)}, cost $${tuMoney(u.cost || 0)} — mostly lessors' lease rent invoices without tanks. `
+    + "Not on any tank = sundry invoices and charges SARFD gives no tank for (mostly lessors' lease rent invoices): in the Grand Total, not on a tank. "
     + `Source: SARFD tblContainerMovement, tblContainerTransaction, tblInvoice, tblBL.`
     + (tu.data.lastSync ? ` Last sync ${new Date(tu.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.` : "");
 }
@@ -3641,7 +3670,8 @@ $("tuTable").onclick = (e) => {
   const b = e.target.closest("button.num[data-c]"); if (b) openTank(b.dataset.c);
 };
 $("tuToggleAll").onclick = () => {
-  if (tu.rows.length && tu.rows.every((r) => tu.open.has(r.c))) tu.open.clear(); else tu.rows.forEach((r) => tu.open.add(r.c));
+  const list = [...tu.rows, ...(tu.offRows || [])];
+  if (list.length && list.every((r) => tu.open.has(r.c))) tu.open.clear(); else list.forEach((r) => tu.open.add(r.c));
   renderTu();
 };
 $("tuXlsx").onclick = () => {   // one row per tank and measure, months across (like the table)
@@ -3705,7 +3735,9 @@ function tankExport(c) {
 // ---- detail behind a number of the monthly table: k = idle | pct | work (movement periods) or rev | cost | net (invoice lines)
 const TU_DETAIL = { idle: ["Idle Days", "idle"], pct: ["Utilisation %", "working"], work: ["Utilised Days", "working"], rev: ["Revenue", "rev"], cost: ["Cost", "cost"], net: ["Revenue and Cost", null] };
 function tuDetail(c, k, mo) {
-  const tanks = c ? [(tu.data?.tanks || []).find((t) => t.c === c)].filter(Boolean) : tu.rows.map((r) => r.t);   // all tanks = those in the table (search applies)
+  const money = !["idle", "pct", "work"].includes(k);
+  const tanks = c === TU_NONE ? [tu.data.none] : c ? [(tu.data?.tanks || []).find((t) => t.c === c)].filter(Boolean)
+    : [...tu.rows.map((r) => r.t), ...(money ? [...(tu.offRows || []).map((r) => r.t), ...(tu.q.trim() ? [] : [tu.data.none])] : [])];   // all = the Grand Total's
   const fromM = mo || tu.from, toM = mo || tu.to, [title, want] = TU_DETAIL[k], days = ["idle", "pct", "work"].includes(k);
   const fromD = `${fromM}-01`, toD = tuMonthEnd(toM), rows = [];
   for (const t of tanks) {
