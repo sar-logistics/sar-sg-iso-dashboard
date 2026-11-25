@@ -3631,11 +3631,7 @@ function renderTu() {
     row("gt1", '<td class="nm" title="Month: utilised days ÷ tanks in the fleet that month. Grand Total: average of the monthly figures">Avg Utilised Days per Tank</td>',
       [`<td class="gt">${avgWork("")}</td>`, ms.map((mo) => `<td>${avgWork(mo)}</td>`).join("")]));
   let body = gtRows.join("");
-  if (none && (Math.round(none.rev) || Math.round(none.cost))) {
-    body += row("", `<td class="nm" title="Sundry invoices and charges SARFD gives no tank for (mostly lessors' lease rent invoices) — in the Grand Total, not on a tank"><b>${TU_NONE}</b></td>`,
-      [`<td class="gt"></td>`, ms.map(() => "<td></td>").join("")]);
-    for (const [k, h] of TU_TANK_MORE) body += row("sub", `<td class="nm">${h}</td>`, cells(none, k));
-  }
+  // "Not on any tank" has no row of its own (user, 25 Nov): its money is only in the Grand Total above
   const tankRows = (list) => { for (const r of list) {
     const open = tu.open.has(r.c), tip = [r.lessor && `Lessor ${r.lessor}`, r.rate != null && `$${r.rate}/day`, r.last[1] && `Now: ${r.last[1]} at ${r.last[3] || "—"} since ${shortDate(r.last[0])}`].filter(Boolean).join(" · ");
     body += row("", `<td class="nm" title="${esc(tip)}"><button class="tg" data-tg="${esc(r.c)}" aria-expanded="${open}">${open ? "−" : "+"}</button>`
@@ -3659,7 +3655,7 @@ function renderTu() {
     + "Gross Profit = revenue − cost. Each movement lasts until the tank's next one; Utilisation % = utilised days ÷ days in fleet. "
     + "Revenue = principal sales, sub-lease, sundry and M&R sales invoices less principal credit notes; from Jan 2026 the same rules as Performance (credit notes against pre-2026 invoices and the old company after Jan-26 left out), so the Grand Total revenue matches Billing Details; cost = container-wise and BL purchase invoices (lease rent, storage, cleaning, repair, freight …), by invoice month, USD. "
     + "A charge goes to a tank from the invoice's own per-tank amounts, else its tank list or BL tanks (exact when priced per tank); * = includes charges split equally across the tanks of an invoice. "
-    + "Not on any tank = sundry invoices and charges SARFD gives no tank for (mostly lessors' lease rent invoices): in the Grand Total, not on a tank. "
+    + "The Grand Total also holds sundry invoices and charges SARFD gives no tank for (mostly lessors' lease rent invoices); click a Grand Total number to see them. "
     + `Source: SARFD tblContainerMovement, tblContainerTransaction, tblInvoice, tblBL.`
     + (tu.data.lastSync ? ` Last sync ${new Date(tu.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.` : "");
 }
