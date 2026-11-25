@@ -543,7 +543,7 @@ async function mrDataset() {
 //                 user's activity list (TANK_STATUS): Idle (the user's Depot In), every other status = utilised by the customer,
 //                 OFF HIRE = back with the lessor (not counted). Activities not on the list count as utilised, with no status.
 //   lease         tblContainerTransaction On Hire / Off Hire rows: lessor, daily rate, pick-up date
-//   revenue       tblInvoice Principal Sales, Sub Lease, M&R Sales invoices; Principal Credit Notes negative
+//   revenue       tblInvoice Principal Sales, Sub Lease, Sundry, M&R Sales invoices; Principal Credit Notes negative
 //   cost          tblInvoice Purchase Invoice Container Wise (lease rent, storage, cleaning, repair, lift on/off …)
 //                 and Purchase Invoices (freight, transport, handling). M&R work orders (tblContainerRepair) are
 //                 billed through the container-wise purchase invoices, so they are not added again.
@@ -554,9 +554,13 @@ async function mrDataset() {
 //      equal to the number of tanks (per-tank rate), is exact; anything else is split equally and marked "split"
 //   3. no container rows and no BL tanks → unassigned (counted in the totals, not on any tank)
 // Amounts are chargeTotalAmountHc / detailAmountHc (USD). Both SAR companies, every date (from Mar 2025).
-const TANK_SNAPSHOT_ID = "tank-utilisation-v5";
+const TANK_SNAPSHOT_ID = "tank-utilisation-v7";
 const TANK_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblInvoice", "tblBL", "tblJob"];
-const TANK_VOUCHERS = { PSI: "rev", SLI: "rev", MRI: "rev", CN: "rev", PICI: "cost", PI: "cost" };
+const TANK_VOUCHERS = { PSI: "rev", SLI: "rev", SDI: "rev", MRI: "rev", CN: "rev", PICI: "cost", PI: "cost" };
+// From Jan 2026 revenue follows the Performance (Billing Details) rules, so the Grand Total matches it (user, 25 Nov 2026):
+// sundry invoices (SDI) count, credit notes against pre-2026 invoices and the old company after Jan-26 don't.
+// Revenue / cost that can't go on any tank (no tank in SARFD) is kept in noTank; tanks now OFF HIRE are sent with off: 1.
+const TANK_RULES_FROM = "2026-01-01";
 // Activity -> Tank Status, as given by the user (30 Oct 2026). Idle (the user's Depot In) is the only idle status.
 const TANK_STATUS = {
   "EMPTY AVAILABLE": "Idle", "SURVEY": "Idle", "WASHING/ UNDER CLEANING": "Idle",
@@ -582,7 +586,7 @@ async function buildTankStatus(db, lastSync) {
       detailContainerNo: 1, pageTypeName: 1, partyName: 1, detailRate: 1, detailPickUpDate: 1, containerTransactionDate: 1 } }).toArray(),
     db.collection("tblInvoice").find({ recordType: { $in: ["H", "C", "D"] }, voucherCode: { $in: Object.keys(TANK_VOUCHERS) }, invoiceNo: { $not: /^PRO/i } },
       { projection: { _id: 0, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, recordType: 1, chargeName: 1, chargeQuantity: 1,
-        chargeTotalAmountHc: 1, detailContainerNo: 1, detailAmountHc: 1, containerNos: 1, blNo: 1, jobNo: 1 } }).toArray(),
+        chargeTotalAmountHc: 1, detailContainerNo: 1, detailAmountHc: 1, containerNos: 1, blNo: 1, jobNo: 1, companyName: 1, parentInvoiceDate: 1 } }).toArray(),
     db.collection("tblBL").find({ recordType: "D", container_containerNo: { $nin: [null, ""] } }, { projection: { _id: 0, blNo: 1, container_containerNo: 1 } }).toArray(),
     db.collection("tblBL").find({ recordType: "H", deletedNo: { $exists: false } }, { projection: { _id: 0, blNo: 1, hblNo: 1, polName: 1, podName: 1 } }).toArray(),
     db.collection("tblJob").find({}, { projection: { _id: 0, jobNo: 1, polName: 1, podName: 1 } }).toArray(),
@@ -637,8 +641,9 @@ async function buildTankStatus(db, lastSync) {
   const byInv = new Map();
   for (const r of inv) {
     const k = r.invoiceId ?? r.invoiceNo; let e = byInv.get(k);
-    if (!e) byInv.set(k, e = { no: s(r.invoiceNo), date: day(r.invoiceDate), v: r.voucherCode, bl: "", job: "", cn: new Set(), c: new Map(), d: [] });
+    if (!e) byInv.set(k, e = { no: s(r.invoiceNo), date: day(r.invoiceDate), v: r.voucherCode, bl: "", job: "", cn: new Set(), c: new Map(), d: [], co: "", parent: null });
     if (!e.date) e.date = day(r.invoiceDate);
+    if (!e.co && s(r.companyName)) e.co = s(r.companyName); if (!e.parent && r.parentInvoiceDate) e.parent = day(r.parentInvoiceDate);
     if (s(r.blNo)) e.bl = s(r.blNo); if (r.jobNo != null && String(r.jobNo).trim()) e.job = String(r.jobNo).trim();
     for (const c of String(r.containerNos ?? "").toUpperCase().match(TANK_RE) || []) e.cn.add(c);   // the invoice's tank list
     if (r.recordType === "H") continue;
@@ -647,10 +652,15 @@ async function buildTankStatus(db, lastSync) {
     else { const c = s(r.detailContainerNo).toUpperCase(); if (c) e.d.push({ ch, c, amt: r.detailAmountHc }); }
   }
   const unassigned = { rev: 0, cost: 0, lines: 0 }, unBy = new Map();   // unBy: "voucher|charge" -> amount
+  const noTank = [];   // [date, kind, voucher, invoice no, charge, amount, how, BL / job, "n" (no tank in SARFD)]
   let exact = 0, split = 0;
   for (const e of byInv.values()) {
     if (!e.date) continue;
     const kind = TANK_VOUCHERS[e.v], sign = e.v === "CN" ? -1 : 1, ref = e.bl || e.job;
+    if (kind === "rev" && e.date >= TANK_RULES_FROM) {   // same revenue as Performance from 2026
+      if (e.co && !keepCompany(e.co, e.date)) continue;
+      if (e.v === "CN" && e.parent && e.parent < TANK_RULES_FROM) continue;
+    }
     const put = (c, ch, amt, how) => { tank(c).lines.push([e.date, kind, e.v, e.no, ch, r2(sign * amt), how, ref]); how === "e" ? exact++ : split++; };
     // charges with container rows but no charge row (container-wise invoices) count from the container rows
     const charges = new Map(e.c);
@@ -665,15 +675,22 @@ async function buildTankStatus(db, lastSync) {
       const amt = x.amt ?? dSum; if (!amt) continue;
       const list = [...new Set((dRows.length ? dRows : e.d).map((d) => d.c))];
       const ts = list.length ? list : e.cn.size ? [...e.cn] : [...(blTanks.get(e.bl.toUpperCase()) || [])];
-      if (!ts.length) { unassigned[kind] += sign * amt; unassigned.lines++; unBy.set(`${e.v}|${ch}`, (unBy.get(`${e.v}|${ch}`) || 0) + sign * amt); continue; }
+      if (!ts.length) {
+        unassigned[kind] += sign * amt; unassigned.lines++; unBy.set(`${e.v}|${ch}`, (unBy.get(`${e.v}|${ch}`) || 0) + sign * amt);
+        noTank.push([e.date, kind, e.v, e.no, ch, r2(sign * amt), "e", ref, "n"]);
+        continue;
+      }
       const how = ts.length === 1 || x.qty === ts.length ? "e" : "s";
       for (const c of ts) put(c, ch, amt / ts.length, how);
     }
   }
-  // tanks whose latest movement is OFF HIRE are back with the lessor: left out of the report (user, 30 Oct 2026)
+  // tanks whose latest movement is OFF HIRE are back with the lessor: shown in their own section at the bottom
+  // (user, 25 Nov 2026; before that they were left out), their revenue / cost counted in the Grand Total
   const isOff = (t) => t.moves.length && t.moves[t.moves.length - 1][2] === "off";
   const offHire = [...tanks.values()].filter(isOff).length;
-  const out = [...tanks.values()].filter((t) => !isOff(t) && (t.moves.length || t.lines.length));
+  const out = [...tanks.values()].filter((t) => t.moves.length || t.lines.length);
+  for (const t of out) if (isOff(t)) t.off = 1;
+  noTank.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   for (const t of out) t.lines.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   // Repeated text (activity, location, agent, charge, BL / job) goes into one word list and rows carry its index,
   // so the response stays under Vercel's 4.5 MB limit; the page expands it back (tuExpand in index.html).
@@ -683,8 +700,9 @@ async function buildTankStatus(db, lastSync) {
     t.moves = t.moves.map(([d, a, st, loc, ag, ts, pol, pod]) => [d, w(a), st[0], w(loc), w(ag), w(ts), w(pol), w(pod)]);   // state: i(dle) w(orking: utilised) o(ff)
     t.lines = t.lines.map(([d, k, v, no, ch, amt, how, ref]) => [d, k === "rev" ? 1 : 0, v, no, w(ch), amt, how === "e" ? 1 : 0, w(ref)]);
   }
+  const noTankOut = noTank.map(([d, k, v, no, ch, amt, how, ref, why]) => [d, k === "rev" ? 1 : 0, v, no, w(ch), amt, how === "e" ? 1 : 0, w(ref), why]);
   const top = [...unBy].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 15).map(([k, v]) => [...k.split("|"), r2(v)]);
-  return { words, tanks: out, unassigned: { rev: r2(unassigned.rev), cost: r2(unassigned.cost), lines: unassigned.lines, top },
+  return { words, tanks: out, noTank: noTankOut, unassigned: { rev: r2(unassigned.rev), cost: r2(unassigned.cost), lines: unassigned.lines, top },
            assigned: { exact, split }, offHire, lastSync, generatedAt: new Date().toISOString() };
 }
 
