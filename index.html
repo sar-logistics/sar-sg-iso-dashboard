@@ -3738,8 +3738,8 @@ function tuDetailExport(d) {
 
 // ============================================================ Finance
 // Open receivable / payable invoices (same as the Syscon "Invoice Outstanding" report) by party and age.
-// Age = days past the due date as of today: Not Due up to 30, then >30, >60, >90 days.
-const FIN_AGES = [["nd", "Not Due"], ["d30", "Overdue > 30 days"], ["d60", "Overdue > 60 days"], ["d90", "Overdue > 90 days"]];
+// Age = days past the due date as of today: < 30 (not yet due, or up to 30 days past due), 30–60, 60–90, > 90 days.
+const FIN_AGES = [["nd", "< 30 days"], ["d30", "30–60 days"], ["d60", "60–90 days"], ["d90", "> 90 days"]];
 const FIN_SIDES = { ar: { title: "Accounts Receivable", table: "Outstanding Amount", party: "Customer" }, ap: { title: "Accounts Payable", table: "Payable Amount", party: "Vendor" } };
 const fin = { data: null, remarks: new Map(), side: store.get("sar.finSide", "ar"), co: "global", from: "", to: "", months: [], q: "", drill: null, drillQ: "", editing: null, editingAcc: null };
 // Finance tables show whole dollars; the Excel exports keep cents.
@@ -3802,7 +3802,7 @@ function renderFin() {
   for (const b of $("finTabs").children) b.setAttribute("aria-pressed", b.dataset.side === fin.side);
   $("finTitle").textContent = S.title; $("finTableTitle").textContent = S.table;
   $("finSub").textContent = ""; $("finSub").title = "";   // no subtitle under the title (only "Loading…" while the data loads)
-  $("finFoot").innerHTML = `Ageing columns = open invoices (invoice amount less what has been knocked off against them), aged by days past the due date: Not Due up to 30 days, then over 30, 60 and 90 days.${fin.side === "ap" ? " Payables are shown as negative amounts, as in Syscon." : ""}
+  $("finFoot").innerHTML = `Ageing columns = open invoices (invoice amount less what has been knocked off against them), aged by days past the due date: < 30 days (not yet due, or up to 30 days past due), 31–60, 61–90 and over 90 days.${fin.side === "ap" ? " Payables are shown as negative amounts, as in Syscon." : ""}
     From / To pick open invoices by invoice date.`;
 
   const rows = finRows(), docs = finDocs();
@@ -3812,10 +3812,10 @@ function renderFin() {
   const card = (label, value, note, color, attr = "") => `<button class="kpi" ${attr} style="border-top-color:${color}"><div class="lbl">${label}</div><div class="val">${moneyCr(value)}</div><div class="note muted">${note}</div></button>`;
   const pctOf = (v) => (sum.total ? ` · ${(v / sum.total * 100).toFixed(0)}%` : "");
   $("finKpis").innerHTML = card(`Total ${fin.side === "ap" ? "Payable" : "Outstanding"}`, sum.total, `${n0(docs.length)} open invoices · ${n0(new Set(docs.map((d) => d.party)).size)} parties`, "#1E3A8A", 'data-age=""')
-    + card("Not Due", sum.nd, `${n0(cnt.nd || 0)} invoices${pctOf(sum.nd)}`, "#1F8A4C", 'data-age="nd"')
-    + card("Overdue > 30 days", sum.d30, `${n0(cnt.d30 || 0)} invoices${pctOf(sum.d30)}`, "#D98E04", 'data-age="d30"')
-    + card("Overdue > 60 days", sum.d60, `${n0(cnt.d60 || 0)} invoices${pctOf(sum.d60)}`, "#E0712B", 'data-age="d60"')
-    + card("Overdue > 90 days", sum.d90, `${n0(cnt.d90 || 0)} invoices${pctOf(sum.d90)}`, "#C24A2E", 'data-age="d90"');
+    + card(FIN_AGES.find(([x]) => x === "nd")[1], sum.nd, `${n0(cnt.nd || 0)} invoices${pctOf(sum.nd)}`, "#1F8A4C", 'data-age="nd"')
+    + card(FIN_AGES.find(([x]) => x === "d30")[1], sum.d30, `${n0(cnt.d30 || 0)} invoices${pctOf(sum.d30)}`, "#D98E04", 'data-age="d30"')
+    + card(FIN_AGES.find(([x]) => x === "d60")[1], sum.d60, `${n0(cnt.d60 || 0)} invoices${pctOf(sum.d60)}`, "#E0712B", 'data-age="d60"')
+    + card(FIN_AGES.find(([x]) => x === "d90")[1], sum.d90, `${n0(cnt.d90 || 0)} invoices${pctOf(sum.d90)}`, "#C24A2E", 'data-age="d90"');
 
   const cell = (v, party, age, cls = "") => `<td class="${cls}${v < 0 ? " neg" : ""}">${Math.abs(v) >= 0.005 ? `<button class="num" data-p="${esc(party)}"${age ? ` data-age="${age}"` : ""}>${usd2(v)}</button>` : ""}</td>`;
   const body = rows.map((r) => `<tr><td class="txt party" title="${esc(r.party)}">${esc(r.party)}</td>${cell(r.total, r.party, "", "gt")}${FIN_AGES.map(([k]) => cell(r[k], r.party, k)).join("")}</tr>`).join("");   // Grand Total right after the party
