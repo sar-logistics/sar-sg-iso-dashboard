@@ -3574,7 +3574,7 @@ function tuRows(off = false) {
     if (q && ![r.c, r.lessor, r.last[1] || "", r.last[3] || ""].some((v) => v.toLowerCase().includes(q))) continue;
     rows.push(r);
   }
-  rows.sort((a, b) => (a.fleet ? a.work / a.fleet : 2) - (b.fleet ? b.work / b.fleet : 2) || b.idle - a.idle || a.c.localeCompare(b.c));   // lowest utilisation % first
+  rows.sort((a, b) => (b.fleet ? b.work / b.fleet : -1) - (a.fleet ? a.work / a.fleet : -1) || b.work - a.work || a.c.localeCompare(b.c));   // highest utilisation % first (user, 25 Nov)
   return rows;
 }
 // "Not on any tank": its revenue / cost by month in the chosen range
@@ -3606,7 +3606,7 @@ function renderTu() {
     + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
     + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
     + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
-  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % by month, lowest utilisation first — + for utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % by month, highest utilisation first — + for utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
   const val = (r, k, mo) => {
