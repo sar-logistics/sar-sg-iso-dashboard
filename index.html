@@ -3566,7 +3566,7 @@ function tuNone() {
 }
 // rows shown under each tank (and in the Grand Total block): k = monthly field, utilisation % is worked out from the days
 const TU_MEASURES = [["pct", "Utilisation %"], ["work", "Utilised Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Gross Profit (USD)"]];
-const TU_TANK_MORE = TU_MEASURES.filter(([k]) => !["pct", "work"].includes(k));   // under a tank's + (Utilised Days is always shown)
+const TU_TANK_MORE = TU_MEASURES.filter(([k]) => k !== "pct");   // under a tank's + (Utilised Days too, user 25 Nov)
 function renderTu() {
   if (!tu.data) return;
   const rows = tuRows(), offRows = tuRows(true), ms = monthsBetween(tu.from, tu.to), dash = '<span class="dash">—</span>';
@@ -3584,7 +3584,7 @@ function renderTu() {
     + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
     + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
     + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
-  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % and utilised days by month, lowest utilisation first — + for revenue, cost and gross profit; click a number for its detail, a tank for its history`;
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % by month, lowest utilisation first — + for utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
   const val = (r, k, mo) => {
@@ -3604,7 +3604,7 @@ function renderTu() {
   const all = { m: {}, fleet, idle, work: sum("work"), rev, cost };
   for (const f of ["idle", "work", "rev", "cost"]) all.m[f] = Object.fromEntries(ms.map((mo) => [mo, rows.reduce((a, r) => a + r.m[f][mo], 0)
     + (f === "rev" || f === "cost" ? extra.reduce((a, r) => a + r.m[f][mo], 0) : 0)]));
-  // the Grand Total block leaves out Utilised Days (shown under each tank)
+  // the Grand Total block leaves out Utilised Days (under each tank's +)
   const gtMeasures = TU_MEASURES.filter(([k]) => k !== "work");
   const gtRows = gtMeasures.map(([k, h], i) => row(`gt1${i === gtMeasures.length - 1 ? " gt0" : ""}`, `<td class="nm">${h}</td>`, cells(all, k)));
   // average utilised days per tank: utilised days ÷ tanks in the fleet (with idle or utilised days) in the range / that month
@@ -3624,15 +3624,15 @@ function renderTu() {
     const open = tu.open.has(r.c), tip = [r.lessor && `Lessor ${r.lessor}`, r.rate != null && `$${r.rate}/day`, r.last[1] && `Now: ${r.last[1]} at ${r.last[3] || "—"} since ${shortDate(r.last[0])}`].filter(Boolean).join(" · ");
     body += row("", `<td class="nm" title="${esc(tip)}"><button class="tg" data-tg="${esc(r.c)}" aria-expanded="${open}">${open ? "−" : "+"}</button>`
       + `<button class="num tk" data-c="${esc(r.c)}">${esc(r.c)}</button>${r.split ? " *" : ""}<span class="tu-now ${r.last[2] || ""}">${r.last[2] ? esc(r.last[5] || TU_STATE[r.last[2]]) : ""}</span></td>`, cells(r, "pct"));
-    body += row("sub", '<td class="nm">Utilised Days</td>', cells(r, "work"));   // always shown under the tank
     if (open) for (const [k, h] of TU_TANK_MORE) body += row("sub", `<td class="nm">${h}</td>`, cells(r, k));
   } };
   tankRows(rows.slice(0, 1500));
   if (offRows.length) {   // tanks now off hire (back with the lessor): one consolidated block at the very bottom (user, 25 Nov)
     const off = { c: TU_OFF, m: {} };
     for (const f of ["idle", "work", "rev", "cost"]) { off[f] = offRows.reduce((a, r) => a + r[f], 0); off.m[f] = Object.fromEntries(ms.map((mo) => [mo, offRows.reduce((a, r) => a + r.m[f][mo], 0)])); }
-    body += row("tu-sec", `<td class="nm" title="Tanks whose latest movement is OFF HIRE (back with the lessor), added together: days before the off hire; their revenue and cost are also in the Grand Total">Off Hire Tanks (${n0(offRows.length)})</td>`, cells(off, "pct"));
-    for (const [k, h] of TU_MEASURES.filter(([x]) => x !== "pct")) body += row("sub", `<td class="nm">${h}</td>`, cells(off, k));
+    const openOff = tu.open.has(TU_OFF);
+    body += row("tu-sec", `<td class="nm" title="Tanks whose latest movement is OFF HIRE (back with the lessor), added together: days before the off hire; their revenue and cost are also in the Grand Total"><button class="tg" data-tg="${TU_OFF}" aria-expanded="${openOff}">${openOff ? "−" : "+"}</button>Off Hire Tanks (${n0(offRows.length)})</td>`, cells(off, "pct"));
+    if (openOff) for (const [k, h] of TU_TANK_MORE) body += row("sub", `<td class="nm">${h}</td>`, cells(off, k));
   }
   if (!rows.length && !offRows.length) body += `<tr><td colspan="${ms.length + 2}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`;
   $("tuTable").innerHTML = `<thead><tr><th class="nm">Tank No</th><th class="gt">Grand Total</th>${ms.map((mo) => `<th>${monthLabel(mo)}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
