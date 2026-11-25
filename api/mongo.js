@@ -289,7 +289,10 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v13";
+const MR_SNAPSHOT_ID = "mr-inventory-v15";
+// Dummy depots in SARFD (test entries, not real depots): left out of M&R Operations / Current Tank Inventory (user, 25 Nov 2026)
+const DUMMY_DEPOTS = new Set(["TACOMA DEPOT"]);
+const isDummyDepot = (v) => DUMMY_DEPOTS.has(s(v).toUpperCase());
 const OFF_HIRE_ACTIVITY = "OFF HIRE";
 const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice", "tblContainerRepair"];
 
@@ -356,8 +359,10 @@ async function buildMr(db, lastSync) {
   }
   tanks.sort((a, b) => a.c.localeCompare(b.c));
   const pending = await buildBillingPendency(db, tanks);
+  const shown = tanks.filter((t) => !isDummyDepot(t.to));   // a tank sitting at a dummy depot is not shown
+  for (const k of Object.keys(depots)) if (isDummyDepot(k)) delete depots[k];
   const dataTo = latest.reduce((mx, m) => (m.date && +new Date(m.date) > mx ? +new Date(m.date) : mx), 0);
-  return { tanks, offHire, depots, pending, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
+  return { tanks: shown, offHire, depots, pending, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
 }
 
 // Billing pendency (M&R Operations): is the depot cost booked for every time a tank came into a depot (from PEND_FROM)?
@@ -430,7 +435,7 @@ async function buildBillingPendency(db, tanks) {
   const current = new Map(tanks.map((t) => [t.c.toUpperCase(), t.activity]));
   const out = [];
   for (const [c, list] of stays) for (const st of list) {
-    if (st.date < +PEND_FROM || !current.has(c)) continue;   // tanks now OFF HIRE (back with the lessor) are left out (user, 24 Nov)
+    if (st.date < +PEND_FROM || !current.has(c) || isDummyDepot(st.m.toLocationName)) continue;   // dummy depots (Tacoma) left out   // tanks now OFF HIRE (back with the lessor) are left out (user, 24 Nov)
     const ws = [...st.wos.values()].sort((a, b) => a.date - b.date);
     const status = ws.some((w) => w.booked) ? 2 : ws.length ? 1 : st.invs.size ? 3 : 0;   // a work order with the amount blank stays unbooked
     const refs = status === 3 ? [...st.invs].join(", ") : ws.map((w) => w.wo).join(", ");
