@@ -457,6 +457,7 @@
   .dep-table thead th:nth-child(-n+3) { z-index: 5; background: var(--thead); }
   .dep-table thead th.gt:nth-child(3) { background: #E6EDFC; }
   .dep-table tfoot td:nth-child(-n+3) { z-index: 4; background: var(--grand); }
+  .dep-table tr.dgt td, .dep-table tr.dgt td.gt, .dep-table tr.dgt td.mtot { background: var(--grand); font-weight: 700; font-size: 13px; border-bottom: 2px solid #C7DAF3; }
   .dep-table tbody td[colspan] { position: static; width: auto; max-width: none; }
   .dep-table tbody tr:hover { background: #EFF4FF; }
   .dep-table .tg { margin-right: 6px; }
@@ -3334,8 +3335,8 @@ function renderDep() {
     if (open) for (const k of r.kids) body += `<tr class="lv1"><td class="txt"></td><td class="txt l1" title="${esc(k.name)}">${esc(k.name)}</td>${cells(k, `${a0} data-b="${esc(k.name)}"`)}</tr>`;
   }
   $("depTable").innerHTML = `<thead><tr>${head1}</tr></thead>
-    <tbody>${body || `<tr><td colspan="${3 + cols.length}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>
-    <tfoot><tr><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td><td class="gt">${n0(grand.total)}</td>${cols.map((c) => `<td class="${weekly ? "" : "mtot"}">${n0(grand.months[c.key] || 0)}</td>`).join("")}</tr></tfoot>`;
+    <tbody>${body ? `<tr class="dgt"><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td><td class="gt">${n0(grand.total)}</td>${cols.map((c) => `<td class="${weekly ? "" : "mtot"}">${n0(grand.months[c.key] || 0)}</td>`).join("")}</tr>` + body
+      : `<tr><td colspan="${3 + cols.length}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>`;   // Grand Total row on top (user, 26 Nov)
   $("depToggleAll").textContent = rows.length && rows.every((r) => dep.open.has(r.name)) ? "Collapse all" : "Expand all";
 }
 $("depToggleAll").onclick = () => {
