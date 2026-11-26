@@ -660,8 +660,8 @@
   body.finance-only #insSub, body.mr-only #insSub { display: none !important; }
   #tuTable tr.tu-sec td { font-weight: 700; color: var(--ink); border-top: 2px solid var(--line); }
   .mr-depot tr.dpc td { font-weight: 700; background: #F0F4FF; }
-  .mr-pend tr.pgt td { background: var(--grand); font-weight: 700; font-family: "JetBrains Mono", monospace; border-bottom: 2px solid #C7DAF3; }
-  .mr-pend tr.pgt td:first-child { font-family: "Plus Jakarta Sans", sans-serif; }
+  .mr-depot tr.pgt td { background: var(--grand); font-weight: 700; font-family: "JetBrains Mono", monospace; border-bottom: 2px solid #C7DAF3; }
+  .mr-depot tr.pgt td:first-child { font-family: "Plus Jakarta Sans", sans-serif; }
   /* Billing Pendency: Country → Unbooked stay frozen while the month columns scroll (user, 26 Nov);
      only when the table box is wide enough to still show months (container query), else just Country */
   .pend-wrap { container-type: inline-size; }
@@ -2953,8 +2953,8 @@ function renderDepot() {
   const allDepots = [...new Set(rows.map((r) => r.depot))], allCtry = [...new Set(rows.map((r) => r.country))];
   $("mrDepotToggleAll").textContent = allDepots.length && allDepots.every((d) => mr.depotOpen.has(d)) && allCtry.every((c) => mr.ctryOpen.has(c)) ? "Collapse all" : "Expand all";
   $("mrDepotTable").innerHTML = `<thead><tr><th>Country</th><th>Depot Name</th><th>Depot Agent</th><th class="rt">Grand Total</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
-    <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
-    <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td>${nums(grand, 'data-all="1"')}</tr></tfoot>`;   // numbers open the tanks (user, 26 Nov)
+    <tbody>${body ? `<tr class="pgt"><td>GRAND TOTAL</td><td></td><td></td>${nums(grand, 'data-all="1"')}</tr>` + body
+      : '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>`;   // Grand Total on top; numbers open the tanks (user, 26 Nov)
 }
 $("mrDepotToggleAll").onclick = () => {
   const ds = [...new Set(depotRows().map((r) => r.depot))];
