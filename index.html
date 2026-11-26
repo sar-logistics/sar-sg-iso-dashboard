@@ -84,7 +84,11 @@
   .page-head .sub { margin: 2px 0 0; font-size: 12px; color: var(--ink-soft); }
   .page-head .ph-text { flex: 1; min-width: 0; }
   .page-head .ph-text .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .page-head .ph-controls { flex: none; display: flex; align-items: center; gap: 10px; }
+  .page-head .ph-controls { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+  /* any zoom level: the page's controls wrap onto more lines instead of sliding under Refresh / Sign out (user, 26 Nov) */
+  .page-head { flex-wrap: wrap; row-gap: 8px; }
+  .topbar .right { flex: none; }
+  .view-toggle, .view-toggle button, .f, .btn, .btn-primary { white-space: nowrap; }
   .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .select, .f select, .f input { height: 38px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper);
             font-size: 13px; font-weight: 600; color: #000; }
@@ -608,8 +612,11 @@
     .topbar .right { order: 2; margin-left: auto; }
     .topbar .filters, .topbar h1, .topbar .page-head { order: 3; width: 100%; }
     .page-head { flex-wrap: wrap; }
+    .topbar .page-head { flex: 1 1 100%; }   /* own row under the menu / refresh buttons */
+    .page-head .ph-controls { justify-content: flex-start; }
     .topbar h1:not(.hidden) { order: 1; width: auto; font-size: 17px; }
     main { padding: 16px 16px 40px; }
+    main > .kpis, main > .mr-tab > .kpis { top: 0; margin: -4px -16px 0; padding: 12px 16px; }   /* match main's 16px side padding: no sideways scroll */
   }
   @media (max-width: 640px) {
     .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
