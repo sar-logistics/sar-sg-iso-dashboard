@@ -1232,6 +1232,10 @@
     <div class="tools" style="justify-content:space-between">
       <div><h2>Tank Details</h2><p class="sub" style="margin-bottom:0" id="tuTableSub"></p></div>
       <div class="tools" style="margin:0">
+        <select class="select" id="tuPctBand" aria-label="Utilisation %" title="Show tanks by their utilisation % over the chosen months">
+          <option value="">All utilisation %</option><option value="0-25">Below 25%</option><option value="25-50">25% – 50%</option>
+          <option value="50-75">50% – 75%</option><option value="75-101">75% and above</option>
+        </select>
         <input class="search" id="tuSearch" placeholder="Search tank, lessor, location…">
         <button class="btn" id="tuToggleAll">Expand all</button>
         <button class="btn" id="tuXlsx">Export to Excel</button>
@@ -3656,7 +3660,7 @@ $("quoXlsx").onclick = () => {
 // Per tank, for the chosen months: days idle (Tank Status Idle) / utilised (every other status) and the revenue
 // and cost billed to it. Built by the API only from SARFD (tblContainerMovement, tblContainerTransaction, tblInvoice,
 // tblBL) — see buildTankStatus in api/mongo.js for how each invoice charge is put on tanks.
-const tu = { data: null, from: "2026-01", to: "", q: "", open: new Set(), drill: null, rows: [] };   // open = tanks showing their + rows
+const tu = { data: null, from: "2026-01", to: "", q: "", band: "", open: new Set(), drill: null, rows: [] };   // open = tanks showing their + rows
 const TU_FIRST = "2025-03";
 const TU_NONE = "Not on any tank";
 const TU_OFF = "Off Hire Tanks";   // consolidated block of the tanks now off hire   // revenue / cost SARFD gives no tank for (sundry invoices, lessors' lease rent …)   // first month with invoices of both SAR companies
@@ -3699,6 +3703,8 @@ async function loadTu() {
 $("tuFrom").onchange = (e) => { tu.from = e.target.value; if (tu.to < tu.from) { tu.to = tu.from; $("tuTo").value = tu.to; } renderTu(); };
 $("tuTo").onchange = (e) => { tu.to = e.target.value; if (tu.from > tu.to) { tu.from = tu.to; $("tuFrom").value = tu.from; } renderTu(); };
 $("tuSearch").oninput = (e) => { tu.q = e.target.value; renderTu(); };
+$("tuPctBand").onchange = (e) => { tu.band = e.target.value; renderTu(); };   // utilisation % filter (user, 26 Nov)
+const tuFiltered = () => !!tu.q.trim() || !!tu.band;   // narrowed to some tanks: leave out the money with no tank
 
 // The tank's movement history as periods: each movement lasts until the next one (the latest until today),
 // cut to the chosen months. State of a period = state of the activity that starts it.
@@ -3735,6 +3741,10 @@ function tuRows(off = false) {
     r.fleet = r.idle + r.work; r.net = r.rev - r.cost;
     if (!r.fleet && !r.rev && !r.cost) continue;
     if (q && ![r.c, r.lessor, r.last[1] || "", r.last[3] || ""].some((v) => v.toLowerCase().includes(q))) continue;
+    if (tu.band) {   // a tank's utilisation % over the chosen months; tanks with no days in the fleet are left out
+      const [lo, hi] = tu.band.split("-").map(Number), pct = r.fleet ? (100 * r.work) / r.fleet : null;
+      if (pct == null || pct < lo || pct >= hi) continue;
+    }
     rows.push(r);
   }
   rows.sort((a, b) => (b.fleet ? b.work / b.fleet : -1) - (a.fleet ? a.work / a.fleet : -1) || b.work - a.work || a.c.localeCompare(b.c));   // highest utilisation % first (user, 25 Nov)
@@ -3756,7 +3766,7 @@ function renderTu() {
   if (!tu.data) return;
   const rows = tuRows(), offRows = tuRows(true), ms = monthsBetween(tu.from, tu.to), dash = '<span class="dash">—</span>';
   tu.rows = rows; tu.offRows = offRows;
-  const none = tu.q.trim() ? null : tuNone();   // left out while searching for tanks
+  const none = tuFiltered() ? null : tuNone();   // left out while searching / filtering tanks
   const extra = [...offRows, ...(none ? [none] : [])];   // money only: their days are not fleet days
   $("tuSub").textContent = "";
   const sum = (k) => rows.reduce((a, r) => a + r[k], 0);
@@ -3922,7 +3932,7 @@ const TU_DETAIL = { idle: ["Idle Days", "idle"], pct: ["Utilisation %", "working
 function tuDetail(c, k, mo) {
   const money = !["idle", "pct", "work"].includes(k);
   const tanks = c === TU_NONE ? [tu.data.none] : c === TU_OFF ? (tu.offRows || []).map((r) => r.t) : c ? [(tu.data?.tanks || []).find((t) => t.c === c)].filter(Boolean)
-    : [...tu.rows.map((r) => r.t), ...(money ? [...(tu.offRows || []).map((r) => r.t), ...(tu.q.trim() ? [] : [tu.data.none])] : [])];   // all = the Grand Total's
+    : [...tu.rows.map((r) => r.t), ...(money ? [...(tu.offRows || []).map((r) => r.t), ...(tuFiltered() ? [] : [tu.data.none])] : [])];   // all = the Grand Total's
   const fromM = mo || tu.from, toM = mo || tu.to, [title, want] = TU_DETAIL[k], days = ["idle", "pct", "work"].includes(k);
   const fromD = `${fromM}-01`, toD = tuMonthEnd(toM), rows = [];
   for (const t of tanks) {
