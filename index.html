@@ -3782,7 +3782,7 @@ function renderTu() {
     + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
     + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
     + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
-  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % and average utilised days by month, highest utilisation first — + for utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % by month, highest utilisation first — + for average utilised days, utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
   const val = (r, k, mo) => {
@@ -3830,8 +3830,10 @@ function renderTu() {
     const open = tu.open.has(r.c), tip = [r.lessor && `Lessor ${r.lessor}`, r.rate != null && `$${r.rate}/day`, r.last[1] && `Now: ${r.last[1]} at ${r.last[3] || "—"} since ${shortDate(r.last[0])}`].filter(Boolean).join(" · ");
     body += row("", `<td class="nm" title="${esc(tip)}"><button class="tg" data-tg="${esc(r.c)}" aria-expanded="${open}">${open ? "−" : "+"}</button>`
       + `<button class="num tk" data-c="${esc(r.c)}">${esc(r.c)}</button>${r.split ? " *" : ""}<span class="tu-now ${r.last[2] || ""}">${r.last[2] ? esc(r.last[5] || TU_STATE[r.last[2]]) : ""}</span></td>`, cells(r, "pct"));
-    body += row("sub avg", '<td class="nm" title="Months: the tank’s utilised days that month. Grand Total: average utilised days per month over the months it was in the fleet">Avg Utilised Days</td>', tankAvg(r));
-    if (open) for (const [k, h] of TU_TANK_MORE) body += row("sub", `<td class="nm">${h}</td>`, cells(r, k));
+    if (open) {   // under the +: Avg Utilised Days first (user, 26 Nov), then Utilised Days, Revenue, Cost, Gross Profit
+      body += row("sub avg", '<td class="nm" title="Months: the tank’s utilised days that month. Grand Total: average utilised days per month over the months it was in the fleet">Avg Utilised Days</td>', tankAvg(r));
+      for (const [k, h] of TU_TANK_MORE) body += row("sub", `<td class="nm">${h}</td>`, cells(r, k));
+    }
   } };
   tankRows(rows.slice(0, 1500));
   if (offRows.length) {   // tanks now off hire (back with the lessor): one consolidated block at the very bottom (user, 25 Nov)
