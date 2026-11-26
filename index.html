@@ -3783,12 +3783,12 @@ function renderTu() {
   // month = that month's utilised days ÷ tanks in the fleet that month; Grand Total = the average of those monthly figures (user, 24 Nov)
   const avgWorkN = (mo) => { const n = rows.filter((r) => r.m.idle[mo] + r.m.work[mo] > 0).length; return n ? all.m.work[mo] / n : null; };
   const avgWork = (mo) => {
-    if (mo) return all.m.work[mo] ? n0(all.m.work[mo]) : dash;   // months: the month's utilised days of all tanks (user, 25 Nov)
+    if (mo) { const v = avgWorkN(mo); return v ? v.toFixed(1) : dash; }   // months: average per tank too (user, 26 Nov; was total days)
     const vs = ms.map(avgWorkN).filter((v) => v != null);
     return vs.length ? (vs.reduce((a, v) => a + v, 0) / vs.length).toFixed(1) : dash;
   };
   gtRows.splice(gtMeasures.findIndex(([k]) => k === "pct") + 1, 0,
-    row("gt1", '<td class="nm" title="Months: utilised days of all tanks that month. Grand Total: average utilised days per tank — each month’s utilised days ÷ tanks in the fleet that month, averaged over the months">Avg Utilised Days per Tank</td>',
+    row("gt1", '<td class="nm" title="Months: that month’s utilised days ÷ tanks in the fleet that month. Grand Total: average utilised days per tank — each month’s utilised days ÷ tanks in the fleet that month, averaged over the months">Avg Utilised Days per Tank</td>',
       [`<td class="gt">${avgWork("")}</td>`, ms.map((mo) => `<td>${avgWork(mo)}</td>`).join("")]));
   let body = gtRows.join("");
   // "Not on any tank" has no row of its own (user, 25 Nov): its money is only in the Grand Total above
