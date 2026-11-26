@@ -3057,7 +3057,7 @@ $("tXlsx").onclick = () => {
 const INV_COLS = [["al", "AL"], ["av30", "<30"], ["av60", ">30"], ["av90", ">60"], ["av91", ">90"], ["uc", "UC"], ["ur", "UR"], ["us", "US"]];
 const INV_LABEL = { al: "Allocated (AL)", av30: "Available <30 days", av60: "Available 31–60 days", av90: "Available 61–90 days", av91: "Available >90 days",
                     uc: "Under Cleaning (UC)", ur: "Under Repair (UR)", us: "Under Survey (US)" };
-const inv = { country: "", q: "", closed: new Set() };
+const inv = { country: "", q: "", open: new Set() };   // countries collapsed by default (user, 26 Nov)
 const NO_COUNTRY = "(No country in SARFD)";
 const locKey = (v) => (v || "").replace(/\s+/g, " ").trim().toUpperCase();
 function invCol(t) {
@@ -3208,7 +3208,7 @@ function renderInv() {
   const nums = (r, base) => INV_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`, ageCls(k))).join("") + cell(r.total, base, "gt");
   let body = "";
   for (const g of groups) {
-    const open = !inv.closed.has(g.country), ck = esc(g.country);
+    const open = !!inv.q || !!inv.country || inv.open.has(g.country), ck   /* a search or one chosen country shows its depots */ = esc(g.country);
     if (open) g.rows.forEach((r, i) => {
       body += `<tr><td class="txt ctry" title="${ck}">${i === 0 ? `<button class="tg" data-tg="${ck}" aria-expanded="true">−</button>${ck}` : ""}</td>
         <td class="txt dep" title="${esc(r.depot)}">${esc(r.depot)}</td><td class="txt" title="${esc(r.port)}">${esc(r.port)}</td><td class="txt" title="${esc(r.agent)}">${esc(r.agent)}</td><td class="txt" title="${esc(r.billing)}">${esc(r.billing)}</td>
@@ -3227,13 +3227,13 @@ function renderInv() {
   for (const th of hr[1].cells) th.style.top = `${h}px`;
   const left = `${hr[1].cells[0].getBoundingClientRect().width}px`;
   for (const c of tbl.querySelectorAll(".dep")) c.style.left = left;
-  $("invToggleAll").textContent = groups.every((g) => !inv.closed.has(g.country)) ? "Collapse all" : "Expand all";
+  $("invToggleAll").textContent = groups.length && groups.every((g) => inv.open.has(g.country)) ? "Collapse all" : "Expand all";
 }
 $("invCountry").onchange = (e) => { inv.country = e.target.value; renderInv(); renderInvTrend(); };
 $("invSearch").oninput = (e) => { inv.q = e.target.value; renderInv(); };
 $("invToggleAll").onclick = () => {
   const groups = invGroups();
-  if (groups.every((g) => !inv.closed.has(g.country))) for (const g of groups) inv.closed.add(g.country); else inv.closed.clear();
+  if (groups.length && groups.every((g) => inv.open.has(g.country))) inv.open.clear(); else for (const g of groups) inv.open.add(g.country);
   renderInv();
 };
 $("invKpis").onclick = (e) => {
@@ -3245,7 +3245,7 @@ $("invKpis").onclick = (e) => {
 };
 $("invTable").onclick = (e) => {
   const tg = e.target.closest("[data-tg]");
-  if (tg) { const k = tg.dataset.tg; inv.closed.has(k) ? inv.closed.delete(k) : inv.closed.add(k); return renderInv(); }
+  if (tg) { const k = tg.dataset.tg; inv.open.has(k) ? inv.open.delete(k) : inv.open.add(k); return renderInv(); }
   const b = e.target.closest("button.num"); if (!b) return;
   const { k, country, c } = b.dataset;
   const depots = new Map(invDepots().map((r) => [r.key, r]));
