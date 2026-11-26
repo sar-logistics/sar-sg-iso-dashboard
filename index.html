@@ -3348,7 +3348,7 @@ function renderDep() {
     if (open) for (const k of r.kids) body += `<tr class="lv1"><td class="txt"></td><td class="txt l1" title="${esc(k.name)}">${esc(k.name)}</td>${cells(k, `${a0} data-b="${esc(k.name)}"`)}</tr>`;
   }
   $("depTable").innerHTML = `<thead><tr>${head1}</tr></thead>
-    <tbody>${body ? `<tr class="dgt"><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td><td class="gt">${n0(grand.total)}</td>${cols.map((c) => `<td class="${weekly ? "" : "mtot"}">${n0(grand.months[c.key] || 0)}</td>`).join("")}</tr>` + body
+    <tbody>${body ? `<tr class="dgt"><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td>${cells(grand, 'data-all="1"')}</tr>` + body
       : `<tr><td colspan="${3 + cols.length}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>`;   // Grand Total row on top (user, 26 Nov)
   $("depToggleAll").textContent = rows.length && rows.every((r) => dep.open.has(r.name)) ? "Collapse all" : "Expand all";
 }
@@ -3377,12 +3377,14 @@ $("depTable").onclick = (e) => {
   const tg = e.target.closest("[data-tg]");
   if (tg) { const k = tg.dataset.tg; dep.open.has(k) ? dep.open.delete(k) : dep.open.add(k); return renderDep(); }
   const b = e.target.closest("button.num"); if (!b) return;
-  const [k0, k1] = depKeys(), { a, b: bb, m } = b.dataset;
+  const [k0, k1] = depKeys(), { a, b: bb, m, all } = b.dataset;
   const wk = m?.startsWith("wk:") ? m.slice(3) : null, mo = m && !wk ? m : null;
   const when = !m ? `${monthLabel(dep.from)} – ${monthLabel(dep.to)}` : wk ? `${isoWeekName(wk)} (${depWeekRange({ monday: wk })})` : monthLabel(mo);
   const inRange = (x) => { const xm = x.date.slice(0, 7); return xm >= dep.from && xm <= dep.to; };
-  openBls([a, bb, when].filter(Boolean).join(" › "),
-    (x) => x[k0] === a && (!bb || x[k1] === bb) && (!mo || x.date.startsWith(mo)) && (!wk || (mondayOf(x.date) === wk && inRange(x))));
+  // Grand Total row: every BL behind the rows shown (search applied)
+  const shown = all ? new Set(depRows().flatMap((r) => r.kids.map((k) => r.name + "\u0001" + k.name))) : null;
+  openBls([all ? "Grand Total" : a, bb, when].filter(Boolean).join(" › "),
+    (x) => (all ? shown.has(x[k0] + "\u0001" + x[k1]) : x[k0] === a) && (!bb || x[k1] === bb) && (!mo || x.date.startsWith(mo)) && (!wk || (mondayOf(x.date) === wk && inRange(x))));
 };
 $("depKpis").onclick = (e) => {
   const k = e.target.closest(".kpi"); if (!k || (!k.dataset.all && !k.dataset.month)) return;
