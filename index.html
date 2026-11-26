@@ -2630,7 +2630,7 @@ const MR_COLORS = { Empty: "#2563EB", "Loaded Full": "#1F8A4C", "Sent to Consign
                     "Under Cleaning": "#D98E04", "Under Repair": "#C24A2E", "Under Survey": "#C99A3B", Other: "#94A3B8" };
 const MR_LABEL = { Other: "Other Activity" };
 const PRINCIPAL_COLORS = ["#1E3A8A", "#0E9AA7", "#D98E04", "#7B5EA7", "#1F8A4C", "#C24A2E"];
-const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), mode: "table", principal: "", open: new Set(), depotOpen: new Set(), ctryClosed: new Set(), depotQ: "", pendOpen: new Set(), pendCtryOpen: new Set(), pendQ: "", pendLines: null, drill: null, drillQ: "" };
+const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), mode: "table", principal: "", open: new Set(), depotOpen: new Set(), ctryOpen: new Set(), depotQ: "", pendOpen: new Set(), pendCtryOpen: new Set(), pendQ: "", pendLines: null, drill: null, drillQ: "" };
 const n0 = (v) => Number(v || 0).toLocaleString("en-IN");
 const DAY_MS = 86400000;
 const idleDays = (t) => (t.date ? Math.max(0, Math.floor((Date.now() - new Date(t.date + "T00:00")) / DAY_MS)) : null);
@@ -2900,7 +2900,7 @@ function renderDepot() {
   while (i < rows.length) {
     const c = rows[i].country, cRows = [];
     while (i < rows.length && rows[i].country === c) cRows.push(rows[i++]);
-    const cOpen = searching || !mr.ctryClosed.has(c), cTot = sumRows(cRows, c), nDep = new Set(cRows.map((r) => r.depot)).size;
+    const cOpen = searching || mr.ctryOpen.has(c)   /* collapsed by default (user, 26 Nov) */, cTot = sumRows(cRows, c), nDep = new Set(cRows.map((r) => r.depot)).size;
     body += `<tr class="dpc"><td title="${esc(c)}"><button class="tg" data-ctg="${esc(c)}" aria-expanded="${cOpen}">${cOpen ? "−" : "+"}</button>${esc(c)}</td>`
       + `<td><span class="dash">${plural(nDep, "depot")}</span></td><td></td>` + nums(cTot, `data-ctry="${esc(c)}"`) + "</tr>";
     if (!cOpen) continue;
@@ -2917,21 +2917,22 @@ function renderDepot() {
         + nums(r, `data-d="${esc(r.depot)}" data-ag="${esc(r.agent)}"`) + "</tr>").join("");
     }
   }
-  const allDepots = [...new Set(rows.map((r) => r.depot))];
-  $("mrDepotToggleAll").textContent = allDepots.length && allDepots.every((d) => mr.depotOpen.has(d)) && !mr.ctryClosed.size ? "Collapse all" : "Expand all";
+  const allDepots = [...new Set(rows.map((r) => r.depot))], allCtry = [...new Set(rows.map((r) => r.country))];
+  $("mrDepotToggleAll").textContent = allDepots.length && allDepots.every((d) => mr.depotOpen.has(d)) && allCtry.every((c) => mr.ctryOpen.has(c)) ? "Collapse all" : "Expand all";
   $("mrDepotTable").innerHTML = `<thead><tr><th>Country</th><th>Depot Name</th><th>Depot Agent</th><th class="rt">Grand Total</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
     <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
     <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td><td>${n0(grand.total)}</td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}</tr></tfoot>`;
 }
 $("mrDepotToggleAll").onclick = () => {
   const ds = [...new Set(depotRows().map((r) => r.depot))];
-  if (ds.length && ds.every((d) => mr.depotOpen.has(d)) && !mr.ctryClosed.size) mr.depotOpen.clear();
-  else { for (const d of ds) mr.depotOpen.add(d); mr.ctryClosed.clear(); }
+  const cs = [...new Set(depotRows().map((r) => r.country))];
+  if (ds.length && ds.every((d) => mr.depotOpen.has(d)) && cs.every((c) => mr.ctryOpen.has(c))) { mr.depotOpen.clear(); mr.ctryOpen.clear(); }
+  else { for (const d of ds) mr.depotOpen.add(d); for (const c of cs) mr.ctryOpen.add(c); }
   renderDepot();
 };
 $("mrDepotTable").onclick = (e) => {
   const ct = e.target.closest("[data-ctg]");
-  if (ct) { const c = ct.dataset.ctg; mr.ctryClosed.has(c) ? mr.ctryClosed.delete(c) : mr.ctryClosed.add(c); return renderDepot(); }
+  if (ct) { const c = ct.dataset.ctg; mr.ctryOpen.has(c) ? mr.ctryOpen.delete(c) : mr.ctryOpen.add(c); return renderDepot(); }
   const tg = e.target.closest("[data-dtg]");
   if (tg) { const d = tg.dataset.dtg; mr.depotOpen.has(d) ? mr.depotOpen.delete(d) : mr.depotOpen.add(d); return renderDepot(); }
   const b = e.target.closest("button.num"); if (!b) return;
