@@ -483,6 +483,7 @@
   .fin-table td.party { font-weight: 600; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
   .fin-table th.gt, .fin-table td.gt { background: #F0F4FF; font-weight: 700; }
   .fin-table th.due, .fin-table td.due { background: #FFF6E8; font-weight: 700; }
+  .fin-table tr.fgt td, .fin-table tr.fgt td.gt, .fin-table tr.fgt td.due { background: var(--grand); font-weight: 700; font-size: 13px; border-bottom: 2px solid #C7DAF3; }
   .fin-table td.rem { width: 100%; min-width: 90px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); font-size: 12px; }
   .fin-table .neg, .fin-table .neg .num { color: var(--ink); }
   .fin-table th.acc, .fin-table td.acc { background: #F7F3FC; }
@@ -4036,8 +4037,8 @@ function renderFin() {
   const cell = (v, party, age, cls = "") => `<td class="${cls}${v < 0 ? " neg" : ""}">${Math.abs(v) >= 0.005 ? `<button class="num" data-p="${esc(party)}"${age ? ` data-age="${age}"` : ""}>${usd2(v)}</button>` : ""}</td>`;
   const body = rows.map((r) => `<tr><td class="txt party" title="${esc(r.party)}">${esc(r.party)}</td>${cell(r.total, r.party, "", "gt")}${FIN_COLS.map(([k]) => k === "due" ? cell(finDue(r), r.party, k, "due") : cell(r[k], r.party, k)).join("")}</tr>`).join("");   // Grand Total right after the party
   $("finTable").innerHTML = `<thead><tr><th class="txt">${S.party}</th><th class="gt">Grand Total</th>${FIN_COLS.map(([k, l]) => `<th${k === "due" ? ' class="due"' : ""}>${l}</th>`).join("")}</tr></thead>
-    <tbody>${body || '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
-    <tfoot><tr><td class="txt">Grand Total (${n0(rows.length)})</td><td class="gt">${usd2(sum.total)}</td>${FIN_COLS.map(([k]) => { const v = k === "due" ? finDue(sum) : sum[k]; return `<td class="${k === "due" ? "due" : ""}${v < 0 ? " neg" : ""}">${usd2(v)}</td>`; }).join("")}</tr></tfoot>`;
+    <tbody>${body ? `<tr class="fgt"><td class="txt">Grand Total (${n0(rows.length)})</td>${cell(sum.total, "", "", "gt").replace('class="num"', 'class="num" data-all="1"')}${FIN_COLS.map(([k]) => (k === "due" ? cell(finDue(sum), "", k, "due") : cell(sum[k], "", k)).replace('class="num"', 'class="num" data-all="1"')).join("")}</tr>` + body
+      : '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>`;   // Grand Total on top, numbers open the invoices (user, 26 Nov)
 }
 async function saveFinNote(party, fields) {
   fin.editing = null; fin.editingAcc = null;   // first, so the input's blur doesn't save a second time
@@ -4052,7 +4053,8 @@ $("finTable").onclick = (e) => {
   const ea = e.target.closest("[data-edit-acc]"); if (ea) { fin.editing = null; fin.editingAcc = ea.dataset.editAcc; return renderFin(); }
   const ac = e.target.closest("[data-acc-p]"); if (ac) return openAccDetail(ac.dataset.accP);
   const b = e.target.closest("button.num"); if (!b) return;
-  const { p, age } = b.dataset;
+  const { p, age, all } = b.dataset;
+  if (all) { const ps = new Set(finRows().map((r) => r.party)); return openFinDocs(`Grand Total › ${finAgeLabel(age)}`, (d) => ps.has(d.party) && finAgeIs(d, age)); }
   openFinDocs(`${p} › ${finAgeLabel(age)}`, (d) => d.party === p && finAgeIs(d, age));
 };
 $("finTable").onkeydown = (e) => {
