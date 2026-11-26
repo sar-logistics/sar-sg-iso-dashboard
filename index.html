@@ -804,6 +804,10 @@
     <div class="ph-controls">
       <label class="f">From <select id="tuFrom" aria-label="Tank utilisation from month"></select></label>
       <label class="f">To <select id="tuTo" aria-label="Tank utilisation to month"></select></label>
+      <select class="select" id="tuPctBand" aria-label="Utilisation %" title="Show tanks by their utilisation % over the chosen months">
+        <option value="">All utilisation %</option><option value="zero">0% (no utilised days)</option><option value="0-25">Below 25%</option><option value="25-50">25% – 50%</option>
+        <option value="50-75">50% – 75%</option><option value="75-101">75% and above</option>
+      </select>
     </div>
   </div>
   <div class="page-head hidden" id="finHead">
@@ -1232,10 +1236,6 @@
     <div class="tools" style="justify-content:space-between">
       <div><h2>Tank Details</h2><p class="sub" style="margin-bottom:0" id="tuTableSub"></p></div>
       <div class="tools" style="margin:0">
-        <select class="select" id="tuPctBand" aria-label="Utilisation %" title="Show tanks by their utilisation % over the chosen months">
-          <option value="">All utilisation %</option><option value="0-25">Below 25%</option><option value="25-50">25% – 50%</option>
-          <option value="50-75">50% – 75%</option><option value="75-101">75% and above</option>
-        </select>
         <input class="search" id="tuSearch" placeholder="Search tank, lessor, location…">
         <button class="btn" id="tuToggleAll">Expand all</button>
         <button class="btn" id="tuXlsx">Export to Excel</button>
@@ -3742,8 +3742,8 @@ function tuRows(off = false) {
     if (!r.fleet && !r.rev && !r.cost) continue;
     if (q && ![r.c, r.lessor, r.last[1] || "", r.last[3] || ""].some((v) => v.toLowerCase().includes(q))) continue;
     if (tu.band) {   // a tank's utilisation % over the chosen months; tanks with no days in the fleet are left out
-      const [lo, hi] = tu.band.split("-").map(Number), pct = r.fleet ? (100 * r.work) / r.fleet : null;
-      if (pct == null || pct < lo || pct >= hi) continue;
+      const [lo, hi] = tu.band === "zero" ? [0, 0] : tu.band.split("-").map(Number), pct = r.fleet ? (100 * r.work) / r.fleet : null;
+      if (pct == null || (tu.band === "zero" ? r.work > 0 : pct < lo || pct >= hi)) continue;   // 0% = in the fleet with no utilised days (user, 26 Nov)
     }
     rows.push(r);
   }
