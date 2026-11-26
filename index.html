@@ -2967,7 +2967,7 @@ function renderDepot() {
   $("mrDepotToggleAll").textContent = allDepots.length && allDepots.every((d) => mr.depotOpen.has(d)) && allCtry.every((c) => mr.ctryOpen.has(c)) ? "Collapse all" : "Expand all";
   $("mrDepotTable").innerHTML = `<thead><tr><th>Country</th><th>Depot Name</th><th>Depot Agent</th><th class="rt">Grand Total</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
     <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
-    <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td><td>${n0(grand.total)}</td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}</tr></tfoot>`;
+    <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td>${nums(grand, 'data-all="1"')}</tr></tfoot>`;   // numbers open the tanks (user, 26 Nov)
 }
 $("mrDepotToggleAll").onclick = () => {
   const ds = [...new Set(depotRows().map((r) => r.depot))];
@@ -2982,8 +2982,12 @@ $("mrDepotTable").onclick = (e) => {
   const tg = e.target.closest("[data-dtg]");
   if (tg) { const d = tg.dataset.dtg; mr.depotOpen.has(d) ? mr.depotOpen.delete(d) : mr.depotOpen.add(d); return renderDepot(); }
   const b = e.target.closest("button.num"); if (!b) return;
-  const { d, ag, c, ctry } = b.dataset;
+  const { d, ag, c, ctry, all } = b.dataset;
   const label = (DEPOT_COLS.find(([k]) => k === c) || [])[1] || "All";
+  if (all) {   // Grand Total: the tanks behind every row shown (search applied)
+    const shown = new Set(depotRows().map((r) => r.depot + "\u0001" + r.agent));
+    return openTanks({ title: ["Grand Total", label].join(" › "), depotCol: c || "any", test: (t) => shown.has((t.to || "(No location)") + "\u0001" + t.agent) });
+  }
   if (ctry) return openTanks({ title: [ctry, label].join(" › "), depotCol: c || "any", test: (t) => depotCountry(t.to || "(No location)") === ctry });
   openTanks({ title: [d, ag, label].filter(Boolean).join(" › "), depot: d, agent: ag, depotCol: c || "any" });
 };
