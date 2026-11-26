@@ -651,6 +651,7 @@
   body.mr-only #sideNav > a:not([data-page="mr"]), body.mr-only #perfSub { display: none !important; }
   body.finance-only #insSub, body.mr-only #insSub { display: none !important; }
   #tuTable tr.tu-sec td { font-weight: 700; color: var(--ink); border-top: 2px solid var(--line); }
+  .mr-depot tr.dpc td { font-weight: 700; background: #F0F4FF; }
 </style>
 </head>
 <body>
@@ -2627,7 +2628,7 @@ const MR_COLORS = { Empty: "#2563EB", "Loaded Full": "#1F8A4C", "Sent to Consign
                     "Under Cleaning": "#D98E04", "Under Repair": "#C24A2E", "Under Survey": "#C99A3B", Other: "#94A3B8" };
 const MR_LABEL = { Other: "Other Activity" };
 const PRINCIPAL_COLORS = ["#1E3A8A", "#0E9AA7", "#D98E04", "#7B5EA7", "#1F8A4C", "#C24A2E"];
-const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), mode: "table", principal: "", open: new Set(), depotOpen: new Set(), depotQ: "", pendOpen: new Set(), pendQ: "", pendLines: null, drill: null, drillQ: "" };
+const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), mode: "table", principal: "", open: new Set(), depotOpen: new Set(), ctryClosed: new Set(), depotQ: "", pendOpen: new Set(), pendQ: "", pendLines: null, drill: null, drillQ: "" };
 const n0 = (v) => Number(v || 0).toLocaleString("en-IN");
 const DAY_MS = 86400000;
 const idleDays = (t) => (t.date ? Math.max(0, Math.floor((Date.now() - new Date(t.date + "T00:00")) / DAY_MS)) : null);
@@ -2838,19 +2839,28 @@ function depotCol(t) {
   if (t.bucket !== "Empty") return null;
   return t.activity.includes("ALLOCATED") ? "alloc" : "avail";
 }
+// a depot's country: only as found in SARFD (same as Current Tank Inventory), else "(No country in SARFD)"
+function depotCountry(depot) {
+  const D = mr.data?.depots?.[locKey(depot)] || {};
+  return ((D.filled || []).includes("country") ? "" : D.country) || NO_COUNTRY;
+}
+// rows: one per depot × agent, sorted country (most tanks first) → depot (most tanks first) → agent (user, 26 Nov: country-wise)
 function depotRows() {
   const m = new Map();
   for (const t of mrTanks()) {
     const col = depotCol(t); if (!col) continue;
     const depot = t.to || "(No location)", key = [depot, t.agent].join("\u0001");
     let r = m.get(key);
-    if (!r) m.set(key, r = { depot, agent: t.agent, total: 0, ...Object.fromEntries(DEPOT_COLS.map(([k]) => [k, 0])) });
+    if (!r) m.set(key, r = { country: depotCountry(depot), depot, agent: t.agent, total: 0, ...Object.fromEntries(DEPOT_COLS.map(([k]) => [k, 0])) });
     r[col]++; r.total++;
   }
   const q = mr.depotQ.toLowerCase();
-  const rows = [...m.values()].filter((r) => !q || [r.depot, r.agent].some((v) => v.toLowerCase().includes(q)));
-  const depotTotal = rows.reduce((a, r) => a.set(r.depot, (a.get(r.depot) || 0) + r.total), new Map());
-  return rows.sort((a, b) => depotTotal.get(b.depot) - depotTotal.get(a.depot) || a.depot.localeCompare(b.depot) || b.total - a.total);
+  const rows = [...m.values()].filter((r) => !q || [r.country, r.depot, r.agent].some((v) => v.toLowerCase().includes(q)));
+  const add = (map, k, n) => map.set(k, (map.get(k) || 0) + n);
+  const depotTotal = new Map(), ctryTotal = new Map();
+  for (const r of rows) { add(depotTotal, r.depot, r.total); add(ctryTotal, r.country, r.total); }
+  return rows.sort((a, b) => (a.country === NO_COUNTRY) - (b.country === NO_COUNTRY) || ctryTotal.get(b.country) - ctryTotal.get(a.country) || a.country.localeCompare(b.country)
+    || depotTotal.get(b.depot) - depotTotal.get(a.depot) || a.depot.localeCompare(b.depot) || b.total - a.total);
 }
 function sumRows(rows, label) {
   const o = { depot: label, agent: "", total: 0 };
@@ -2860,47 +2870,61 @@ function sumRows(rows, label) {
 }
 function renderDepot() {
   const rows = depotRows(), grand = sumRows(rows, "GRAND TOTAL");
-  const depots = new Set(rows.map((r) => r.depot)).size;
-  $("mrDepotSub").textContent = `${n0(grand.total)} tanks at ${n0(depots)} depots (to-location of the latest movement)`;
+  const depots = new Set(rows.map((r) => r.depot)).size, nCtry = new Set(rows.map((r) => r.country)).size;
+  $("mrDepotSub").textContent = `${n0(grand.total)} tanks at ${n0(depots)} depots in ${n0(nCtry)} countr${nCtry === 1 ? "y" : "ies"} (to-location of the latest movement)`;
   const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : '<span class="dash">–</span>'}</td>`;
   // One row per depot with its totals; + opens it to show each agent at that depot.
   const nums = (r, base) => cell(r.total, base, "rt") + DEPOT_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`)).join("");   // Grand Total right after Depot Agent
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   let body = "", i = 0;
   const searching = !!mr.depotQ;
+  // Country (open by default) → its depots → + for each depot's agents
   while (i < rows.length) {
-    const d = rows[i].depot, group = [];
-    while (i < rows.length && rows[i].depot === d) group.push(rows[i++]);
-    const open = searching || mr.depotOpen.has(d), tot = sumRows(group, d);
-    const agents = new Set(group.map((r) => r.agent)).size;
-    body += `<tr class="dp0"><td title="${esc(d)}"><button class="tg" data-dtg="${esc(d)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(d)}</td>`
-      + `<td>${open ? "" : `<span class="dash">${plural(agents, "agent")}</span>`}</td>`
-      + nums(tot, `data-d="${esc(d)}"`) + "</tr>";
-    if (open) body += group.map((r) => `<tr class="dp1"><td></td><td title="${esc(r.agent)}">${esc(r.agent)}</td>`
-      + nums(r, `data-d="${esc(r.depot)}" data-ag="${esc(r.agent)}"`) + "</tr>").join("");
+    const c = rows[i].country, cRows = [];
+    while (i < rows.length && rows[i].country === c) cRows.push(rows[i++]);
+    const cOpen = searching || !mr.ctryClosed.has(c), cTot = sumRows(cRows, c), nDep = new Set(cRows.map((r) => r.depot)).size;
+    body += `<tr class="dpc"><td title="${esc(c)}"><button class="tg" data-ctg="${esc(c)}" aria-expanded="${cOpen}">${cOpen ? "−" : "+"}</button>${esc(c)}</td>`
+      + `<td><span class="dash">${plural(nDep, "depot")}</span></td><td></td>` + nums(cTot, `data-ctry="${esc(c)}"`) + "</tr>";
+    if (!cOpen) continue;
+    let j = 0;
+    while (j < cRows.length) {
+      const d = cRows[j].depot, group = [];
+      while (j < cRows.length && cRows[j].depot === d) group.push(cRows[j++]);
+      const open = searching || mr.depotOpen.has(d), tot = sumRows(group, d);
+      const agents = new Set(group.map((r) => r.agent)).size;
+      body += `<tr class="dp0"><td></td><td title="${esc(d)}"><button class="tg" data-dtg="${esc(d)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(d)}</td>`
+        + `<td>${open ? "" : `<span class="dash">${plural(agents, "agent")}</span>`}</td>`
+        + nums(tot, `data-d="${esc(d)}"`) + "</tr>";
+      if (open) body += group.map((r) => `<tr class="dp1"><td></td><td></td><td title="${esc(r.agent)}">${esc(r.agent)}</td>`
+        + nums(r, `data-d="${esc(r.depot)}" data-ag="${esc(r.agent)}"`) + "</tr>").join("");
+    }
   }
   const allDepots = [...new Set(rows.map((r) => r.depot))];
-  $("mrDepotToggleAll").textContent = allDepots.length && allDepots.every((d) => mr.depotOpen.has(d)) ? "Collapse all" : "Expand all";
-  $("mrDepotTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Depot Agent</th><th class="rt">Grand Total</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
-    <tbody>${body || '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
-    <tfoot><tr><td>GRAND TOTAL</td><td></td><td>${n0(grand.total)}</td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}</tr></tfoot>`;
+  $("mrDepotToggleAll").textContent = allDepots.length && allDepots.every((d) => mr.depotOpen.has(d)) && !mr.ctryClosed.size ? "Collapse all" : "Expand all";
+  $("mrDepotTable").innerHTML = `<thead><tr><th>Country</th><th>Depot Name</th><th>Depot Agent</th><th class="rt">Grand Total</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
+    <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
+    <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td><td>${n0(grand.total)}</td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}</tr></tfoot>`;
 }
 $("mrDepotToggleAll").onclick = () => {
   const ds = [...new Set(depotRows().map((r) => r.depot))];
-  if (ds.length && ds.every((d) => mr.depotOpen.has(d))) mr.depotOpen.clear(); else for (const d of ds) mr.depotOpen.add(d);
+  if (ds.length && ds.every((d) => mr.depotOpen.has(d)) && !mr.ctryClosed.size) mr.depotOpen.clear();
+  else { for (const d of ds) mr.depotOpen.add(d); mr.ctryClosed.clear(); }
   renderDepot();
 };
 $("mrDepotTable").onclick = (e) => {
+  const ct = e.target.closest("[data-ctg]");
+  if (ct) { const c = ct.dataset.ctg; mr.ctryClosed.has(c) ? mr.ctryClosed.delete(c) : mr.ctryClosed.add(c); return renderDepot(); }
   const tg = e.target.closest("[data-dtg]");
   if (tg) { const d = tg.dataset.dtg; mr.depotOpen.has(d) ? mr.depotOpen.delete(d) : mr.depotOpen.add(d); return renderDepot(); }
   const b = e.target.closest("button.num"); if (!b) return;
-  const { d, ag, c } = b.dataset;
+  const { d, ag, c, ctry } = b.dataset;
   const label = (DEPOT_COLS.find(([k]) => k === c) || [])[1] || "All";
+  if (ctry) return openTanks({ title: [ctry, label].join(" › "), depotCol: c || "any", test: (t) => depotCountry(t.to || "(No location)") === ctry });
   openTanks({ title: [d, ag, label].filter(Boolean).join(" › "), depot: d, agent: ag, depotCol: c || "any" });
 };
 $("mrDepotXlsx").onclick = () => {
   const rows = depotRows(), out = [];
-  const conv = (r) => ({ "Depot Name": r.depot, "Depot Agent": r.agent, "Grand Total": r.total,
+  const conv = (r) => ({ Country: r.country ?? "", "Depot Name": r.depot, "Depot Agent": r.agent, "Grand Total": r.total,
     ...Object.fromEntries(DEPOT_COLS.map(([k, l]) => [l, r[k]])) });
   let i = 0;
   while (i < rows.length) {
@@ -2910,7 +2934,7 @@ $("mrDepotXlsx").onclick = () => {
     if (group.length > 1) out.push(conv({ ...sumRows(group, `${d} — TOTAL`) }));
   }
   out.push(conv(sumRows(rows, "GRAND TOTAL")));
-  writeXlsx(`SAR_Depot_Report_${todayIso()}.xlsx`, [["Depot Report", out, [30, 34, 12, 10, 14, 12, 12, 10]]]);
+  writeXlsx(`SAR_Depot_Report_${todayIso()}.xlsx`, [["Depot Report", out, [22, 30, 34, 12, 10, 14, 12, 12, 10]]]);
 };
 
 // ---- tank list pop-up
