@@ -3667,6 +3667,9 @@ const TU_OFF = "Off Hire Tanks";   // consolidated block of the tanks now off hi
 const TU_STATE = { idle: "Idle", working: "Utilised", off: "Off hire" };
 const TU_VOUCHER = { PSI: "Principal Sales Invoice", SLI: "Sub Lease Invoice", SDI: "Sundry Invoice", MRI: "M&R Sales Invoice", CN: "Principal Credit Note",
                      PICI: "Purchase Invoice Container Wise", PI: "Purchase Invoice" };
+// cards in millions (user, 26 Nov): $3.12M, full amount on hover; always USD
+const tuM = (v) => `${v < 0 ? "−" : ""}$${(Math.abs(v) / 1e6).toFixed(2)}M`;
+const tuFull = (v) => `${v < 0 ? "−" : ""}$${Math.abs(Math.round(v)).toLocaleString("en-US")}`;
 const tuMoney = (v) => (Math.round(v) < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("en-US");
 const dayMs = 86400000, dayNo = (d) => Math.floor(Date.parse(d + "T00:00:00Z") / dayMs);
 const tuMonthEnd = (m) => { const [y, mo] = m.split("-").map(Number); return iso(new Date(Date.UTC(y, mo, 0))); };
@@ -3772,13 +3775,13 @@ function renderTu() {
   const sum = (k) => rows.reduce((a, r) => a + r[k], 0);
   const xsum = (k) => extra.reduce((a, r) => a + r[k], 0);
   const fleet = sum("fleet"), idle = sum("idle"), rev = sum("rev") + xsum("rev"), cost = sum("cost") + xsum("cost"), idleNow = rows.filter((r) => r.last[2] === "idle").length;
-  const card = (lbl, val, note, color) => `<div class="kpi" style="border-top-color:${color};cursor:default"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="note muted">${note}</div></div>`;
+  const card = (lbl, val, note, color, tip = "") => `<div class="kpi" style="border-top-color:${color};cursor:default"${tip ? ` title="${tip}"` : ""}><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="note muted">${note}</div></div>`;
   const range = `${monthLabel(tu.from)} – ${monthLabel(tu.to)}`;
   $("tuKpis").innerHTML = card("Tanks", n0(rows.length), `${n0(idleNow)} idle right now`, "#1E3A8A")
     + card("Utilisation %", `${fleet ? ((100 * (fleet - idle)) / fleet).toFixed(1) : "0.0"}%`, `${n0(fleet - idle)} of ${n0(fleet)} tank-days in fleet utilised`, "#D98E04")
-    + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
-    + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
-    + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
+    + card("Revenue", tuM(rev), range, "#1F8A4C", tuFull(rev))
+    + card("Cost", tuM(cost), range, "#C24A2E", tuFull(cost))
+    + card("Gross Profit", tuM(rev - cost), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82", tuFull(rev - cost));
   $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % by month, highest utilisation first — + for average utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
