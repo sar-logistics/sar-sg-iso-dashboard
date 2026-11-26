@@ -246,6 +246,7 @@
   #detailTable.lanes tbody td.gt { background: var(--grand); }
   #detailTable.lanes thead th:nth-child(2) { z-index: 5; }
   #detailTable.lanes tfoot td:nth-child(2) { z-index: 4; }
+  #detailTable.lanes tbody tr.ltot td { background: var(--grand); font-weight: 700; font-size: 13px; border-bottom: 2px solid #C7DAF3; }
   #detailTable.lanes tbody td[colspan] { position: static; width: auto; max-width: none; }
   #detailTable:not(.pivot) td.gt { background: var(--grand); font-weight: 700; }
   #detailTable tr.lane0 td { font-weight: 700; }
@@ -2297,7 +2298,7 @@ function renderTable() {
   $("detailTable").className = "lanes";   // name + Grand Total columns frozen (Agent Detail and Trade Lane Detail)
   $("detailTable").innerHTML =
     `<thead><tr><th>${dim}</th>${gtFirst ? '<th class="gt">Grand Total</th>' : ""}${buckets.map((b) => `<th>${bucketLabel(b, gr)}</th>`).join("")}${gtFirst ? "" : "<th>Total</th>"}</tr></thead>
-     <tbody>${shown.map((r) => {
+     <tbody>${shown.length ? `<tr class="ltot"><td class="name">TOTAL${q ? "" : " = Total Revenue"}</td>${row(totals.cells, totals.total, (v, b) => cell(v, "", b))}</tr>` : ""}${shown.map((r) => {
        const canOpen = !isAgent && !r.others && r.name !== NO_LANE, open = canOpen && (!!q || state.lanesOpen.has(r.name));
        const tg = canOpen ? `<button class="tg" data-ln="${esc(r.name)}" aria-expanded="${open}">${open ? "−" : "+"}</button>` : "";
        let html = `<tr class="${r.others || r.name === NO_LANE ? "recon" : canOpen ? "lane0" : ""}"><td class="name" title="${esc(r.name)}">${tg}${esc(r.name)}</td>${row(r.cells, r.total, (v, b) => cell(v, rowName(r), b))}</tr>`;
@@ -2307,8 +2308,7 @@ function renderTable() {
        }
        return html;
      }).join("")
-       || `<tr><td colspan="${2 + buckets.length}" style="text-align:center;padding:24px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>
-     <tfoot><tr><td>TOTAL${q ? "" : " = Total Revenue"}</td>${row(totals.cells, totals.total, (v, b) => cell(v, "", b))}</tr></tfoot>`;
+       || `<tr><td colspan="${2 + buckets.length}" style="text-align:center;padding:24px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>`;   // TOTAL row on top (user, 26 Nov)
   $("detailMore").classList.add("hidden");
   if (!isAgent) { const ls = main.map((r) => r.name); $("basketToggle").textContent = ls.length && ls.every((n) => state.lanesOpen.has(n)) ? "Collapse all" : "Expand all"; }
 }
