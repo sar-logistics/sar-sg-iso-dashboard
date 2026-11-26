@@ -1126,29 +1126,35 @@
 <main id="invPage" class="hidden">
   <div class="alert hidden" id="invErr" role="alert"></div>
   <div class="kpis inv-kpis" id="invKpis"></div>
-  <section class="card panel" id="invTrendCard">
-    <div class="tools" style="justify-content:space-between">
-      <div><h2>Inventory Trend</h2><p class="sub" style="margin-bottom:0" id="invTrendSub">Tanks at depots by status, saved once a day — click a point for the tanks</p></div>
-      <div class="view-toggle" id="invTrendPer" role="group" aria-label="Period">
-        <button data-p="day" aria-pressed="true">Daily</button><button data-p="week" aria-pressed="false">Weekly</button><button data-p="month" aria-pressed="false">Monthly</button>
-      </div>
-    </div>
-    <div class="chart" style="height:320px"><canvas id="invTrendChart"></canvas></div>
-    <p class="foot" style="margin:10px 0 0" id="invTrendFoot"></p>
-  </section>
   <section class="card panel">
     <div class="tools" style="justify-content:space-between">
-      <div><h2>Depot Inventory</h2><p class="sub" style="margin-bottom:0">Tanks at a depot by status — click a number for the tanks</p></div>
+      <div><h2>Depot Inventory</h2><p class="sub" style="margin-bottom:0" id="invCardSub">Tanks at a depot by status — click a number for the tanks</p></div>
       <div class="tools" style="margin:0">
-        <input class="search" id="invSearch" placeholder="Search country, depot, port, agent…">
-        <button class="btn" id="invToggleAll">Expand all</button>
-        <button class="btn" id="invXlsx">Export to Excel</button>
+        <div class="view-toggle" id="invViewToggle" role="group" aria-label="Show as">
+          <button data-mode="table" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>Table</button>
+          <button data-mode="graph" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20h18"/><path d="M4 16l5-6 4 3.5L20 6"/></svg>Graph</button>
+        </div>
+        <span class="inv-tbl-only" style="display:contents">
+          <input class="search" id="invSearch" placeholder="Search country, depot, port, agent…">
+          <button class="btn" id="invToggleAll">Expand all</button>
+          <button class="btn" id="invXlsx">Export to Excel</button>
+        </span>
+        <div class="view-toggle hidden" id="invTrendPer" role="group" aria-label="Period">
+          <button data-p="day" aria-pressed="true">Daily</button><button data-p="week" aria-pressed="false">Weekly</button><button data-p="month" aria-pressed="false">Monthly</button>
+        </div>
       </div>
     </div>
+    <!-- Graph view: the Inventory Trend (one saved picture per day) -->
+    <div class="hidden" id="invGraphView">
+      <div class="chart" style="height:360px"><canvas id="invTrendChart"></canvas></div>
+      <p class="foot" style="margin:10px 0 0" id="invTrendFoot"></p>
+    </div>
+    <div id="invTableView">
     <div class="tbl-wrap" style="max-height:680px"><table class="inv-table" id="invTable"></table></div>
     <p class="foot" style="margin:10px 0 0">AL = Empty allocated to shipper · AV = Empty available, split by days since the tank's last movement · UC = Under cleaning · UR = Under repair · US = Under survey.
       Depot details come from SARFD: Country from the depot's jobs (or its port), Port from the depot's jobs (or where its empty tanks come in from),
       Agent from the movements into the depot and Billing Party from invoices with that depot.</p>
+    </div>
   </section>
 </main>
 
@@ -1770,7 +1776,7 @@ function route(next) {
   if (page === "log") loadSyncLog();
   if (page === "usage") loadUsage();
   if (page === "mr") { if (mr.data) renderMr(); else loadMr(); }
-  if (page === "inv") { if (mr.data) renderInv(); else loadInv(false); }
+  if (page === "inv") { if (next) setInvView("table"); if (mr.data) renderInv(); else loadInv(false); }
   if (page === "dep") { if (dep.data) renderDep(); else loadDep(); }
   if (page === "fin") { if (fin.data) renderFin(); else loadFin(); }
   if (page === "quo") { if (quo.data) renderQuo(); else loadQuo(); }
@@ -3044,7 +3050,18 @@ function invSum(list) {
 
 // ---- Inventory Trend: one saved picture per day (the API saves it the first time the inventory loads each day and
 // again when newer data arrives; inventorySnapshots in MongoDB). Weekly / monthly = the last saved day of each period.
-const invT = { data: null, per: "day", err: "" };
+const invT = { data: null, per: "day", err: "", view: "table" };   // Depot Inventory opens in Table view (user, 26 Nov)
+function setInvView(v) {
+  invT.view = v === "graph" ? "graph" : "table";
+  const g = invT.view === "graph";
+  for (const b of $("invViewToggle").children) b.setAttribute("aria-pressed", b.dataset.mode === invT.view);
+  $("invGraphView").classList.toggle("hidden", !g); $("invTableView").classList.toggle("hidden", g);
+  $("invTrendPer").classList.toggle("hidden", !g);
+  for (const el of document.querySelectorAll(".inv-tbl-only > *")) el.classList.toggle("hidden", g);
+  $("invCardSub").textContent = g ? "Tanks at depots by status, saved once a day — click a point for the tanks" : "Tanks at a depot by status — click a number for the tanks";
+  if (g) renderInvTrend(); else renderInv();   // a chart needs a visible box
+}
+$("invViewToggle").onclick = (e) => { const b = e.target.closest("button[data-mode]"); if (b) setInvView(b.dataset.mode); };
 const INV_TREND = [["al", "Allocated (AL)", "#7B5EA7", ["al"]], ["av30", "Available <30 Days", "#1F8A4C", ["av30"]],
   ["avold", "Available >30 Days", "#D98E04", ["av60", "av90", "av91"]], ["uc", "Under Cleaning (UC)", "#0E9AA7", ["uc"]],
   ["ur", "Under Repair (UR)", "#C24A2E", ["ur"]], ["us", "Under Survey (US)", "#E0712B", ["us"]]];
@@ -3069,8 +3086,8 @@ function renderInvTrend() {
     : `Saving started 26 Nov 2026 — one point per day from then on${pts.length ? ` (${n0((invT.data?.days || []).length)} day${(invT.data?.days || []).length === 1 ? "" : "s"} saved so far)` : ""}. `
       + "Each day keeps its latest picture; a day is saved when the inventory is first opened that day (and again after a newer sync). "
       + "Weekly / Monthly show the last saved day of each week / month. Same columns as the cards above; Country filter applies.";
-  charts.invTrend?.destroy();
-  if (!pts.length) return;
+  charts.invTrend?.destroy(); charts.invTrend = null;
+  if (!pts.length || invT.view !== "graph") return;
   const sum = (p, cols) => cols.reduce((a, c) => a + p.n[c], 0), tot = pts.map((p) => INV_TREND.reduce((a, [, , , cols]) => a + sum(p, cols), 0));
   charts.invTrend = new Chart($("invTrendChart"), {
     type: "line",   // one line per status plus the total (user, 26 Nov)
