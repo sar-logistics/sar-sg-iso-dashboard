@@ -2641,7 +2641,7 @@ const MR_COLORS = { Empty: "#2563EB", "Loaded Full": "#1F8A4C", "Sent to Consign
                     "Under Cleaning": "#D98E04", "Under Repair": "#C24A2E", "Under Survey": "#C99A3B", Other: "#94A3B8" };
 const MR_LABEL = { Other: "Other Activity" };
 const PRINCIPAL_COLORS = ["#1E3A8A", "#0E9AA7", "#D98E04", "#7B5EA7", "#1F8A4C", "#C24A2E"];
-const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), mode: "table", principal: "", open: new Set(), depotOpen: new Set(), ctryClosed: new Set(), depotQ: "", pendOpen: new Set(), pendQ: "", pendLines: null, drill: null, drillQ: "" };
+const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), mode: "table", principal: "", open: new Set(), depotOpen: new Set(), ctryClosed: new Set(), depotQ: "", pendOpen: new Set(), pendCtryClosed: new Set(), pendQ: "", pendLines: null, drill: null, drillQ: "" };
 const n0 = (v) => Number(v || 0).toLocaleString("en-IN");
 const DAY_MS = 86400000;
 const idleDays = (t) => (t.date ? Math.max(0, Math.floor((Date.now() - new Date(t.date + "T00:00")) / DAY_MS)) : null);
@@ -2708,19 +2708,30 @@ function renderPending() {
   const nb = (ls) => ls.filter(notBooked).length;
   const depots = [...groupBy(all, PEND.depot)].sort((a, b) => nb(b[1]) - nb(a[1]) || a[0].localeCompare(b[0]));
   const searching = !!mr.pendQ;
+  // Country (open by default, most unbooked first) → its depots → + for the tanks (user, 26 Nov: country-wise like the Depot Report)
+  const byCtry = new Map();
+  for (const [d, ls] of depots) { const c = depotCountry(d); if (!byCtry.has(c)) byCtry.set(c, []); byCtry.get(c).push([d, ls]); }
+  const ctries = [...byCtry].sort((a, b) => (a[0] === NO_COUNTRY) - (b[0] === NO_COUNTRY)
+    || nb(b[1].flatMap((x) => x[1])) - nb(a[1].flatMap((x) => x[1])) || a[0].localeCompare(b[0]));
   let body = "";
-  for (const [d, ls] of depots) {
-    const open = searching || mr.pendOpen.has(d), byTank = groupBy(ls, PEND.c);
-    body += `<tr class="dp0"><td title="${esc(d)}"><button class="tg" data-ptg="${esc(d)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(d)}</td>`
-      + `<td><span class="dash">${n0(byTank.size)} tank${byTank.size === 1 ? "" : "s"}</span></td>` + nums(ls, `data-d="${esc(d)}"`) + "</tr>";
-    if (open) for (const [c, tl] of [...byTank].sort((a, b) => nb(b[1]) - nb(a[1]) || a[0].localeCompare(b[0])))
-      body += `<tr class="dp1"><td></td><td title="${esc(tl[0][PEND.now])}">${esc(c)} <span class="dash">${esc(tl[0][PEND.now])}</span></td>` + nums(tl, `data-d="${esc(d)}" data-c="${esc(c)}"`) + "</tr>";
+  for (const [ctry, ds] of ctries) {
+    const cOpen = searching || !mr.pendCtryClosed.has(ctry), cls = ds.flatMap((x) => x[1]);
+    body += `<tr class="dpc"><td title="${esc(ctry)}"><button class="tg" data-pctg="${esc(ctry)}" aria-expanded="${cOpen}">${cOpen ? "−" : "+"}</button>${esc(ctry)}</td>`
+      + `<td><span class="dash">${n0(ds.length)} depot${ds.length === 1 ? "" : "s"}</span></td><td></td>` + nums(cls, `data-ctry="${esc(ctry)}"`) + "</tr>";
+    if (!cOpen) continue;
+    for (const [d, ls] of ds) {
+      const open = searching || mr.pendOpen.has(d), byTank = groupBy(ls, PEND.c);
+      body += `<tr class="dp0"><td></td><td title="${esc(d)}"><button class="tg" data-ptg="${esc(d)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(d)}</td>`
+        + `<td><span class="dash">${n0(byTank.size)} tank${byTank.size === 1 ? "" : "s"}</span></td>` + nums(ls, `data-d="${esc(d)}"`) + "</tr>";
+      if (open) for (const [c, tl] of [...byTank].sort((a, b) => nb(b[1]) - nb(a[1]) || a[0].localeCompare(b[0])))
+        body += `<tr class="dp1"><td></td><td></td><td title="${esc(tl[0][PEND.now])}">${esc(c)} <span class="dash">${esc(tl[0][PEND.now])}</span></td>` + nums(tl, `data-d="${esc(d)}" data-c="${esc(c)}"`) + "</tr>";
+    }
   }
   const tanks = new Set(all.map((l) => l[PEND.c])).size;
-  $("mrPendToggleAll").textContent = depots.length && depots.every(([d]) => mr.pendOpen.has(d)) ? "Collapse all" : "Expand all";
-  $("mrPendTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Tank</th><th class="rt">Depot Entries</th><th class="rt">Booked</th><th class="rt">Unbooked</th>${months.map((mo) => `<th>${monthLabel(mo)}</th>`).join("")}</tr></thead>
-    <tbody>${body || `<tr><td colspan="${5 + months.length}" style="text-align:center;padding:30px;color:#94a3b8">No depot entries</td></tr>`}</tbody>
-    <tfoot><tr><td>GRAND TOTAL</td><td>${n0(tanks)} tanks</td>${nums(all, "")}</tr></tfoot>`;
+  $("mrPendToggleAll").textContent = depots.length && depots.every(([d]) => mr.pendOpen.has(d)) && !mr.pendCtryClosed.size ? "Collapse all" : "Expand all";
+  $("mrPendTable").innerHTML = `<thead><tr><th>Country</th><th>Depot Name</th><th>Tank</th><th class="rt">Depot Entries</th><th class="rt">Booked</th><th class="rt">Unbooked</th>${months.map((mo) => `<th>${monthLabel(mo)}</th>`).join("")}</tr></thead>
+    <tbody>${body || `<tr><td colspan="${6 + months.length}" style="text-align:center;padding:30px;color:#94a3b8">No depot entries</td></tr>`}</tbody>
+    <tfoot><tr><td>GRAND TOTAL</td><td></td><td>${n0(tanks)} tanks</td>${nums(all, "")}</tr></tfoot>`;
   $("mrPendFoot").textContent = "Depot entry = a tank coming into a depot (SARFD tblContainerMovement: empty received from consignee, port to depot empty, "
     + "depot empty in, empty return by shipper) from 1 Jan 2026, with the import BL it came on. Booked = the tank's work order for that visit "
     + "(tblContainerRepair, matched on the import / export BL, else the work-order date) has Principal Approved filled in, "
@@ -2729,22 +2740,26 @@ function renderPending() {
 }
 $("mrPendToggleAll").onclick = () => {
   const ds = [...new Set(pendLines().map((l) => l[PEND.depot]))];
-  if (ds.length && ds.every((d) => mr.pendOpen.has(d))) mr.pendOpen.clear(); else for (const d of ds) mr.pendOpen.add(d);
+  if (ds.length && ds.every((d) => mr.pendOpen.has(d)) && !mr.pendCtryClosed.size) mr.pendOpen.clear();
+  else { for (const d of ds) mr.pendOpen.add(d); mr.pendCtryClosed.clear(); }
   renderPending();
 };
 const PEND_K = { all: () => true, booked: (l) => !notBooked(l), not: notBooked };
 const PEND_K_LABEL = { all: "All entries", booked: "Booked", not: "Unbooked" };
 $("mrPendTable").onclick = (e) => {
+  const ct = e.target.closest("[data-pctg]");
+  if (ct) { const c = ct.dataset.pctg; mr.pendCtryClosed.has(c) ? mr.pendCtryClosed.delete(c) : mr.pendCtryClosed.add(c); return renderPending(); }
   const tg = e.target.closest("[data-ptg]");
   if (tg) { const d = tg.dataset.ptg; mr.pendOpen.has(d) ? mr.pendOpen.delete(d) : mr.pendOpen.add(d); return renderPending(); }
   const b = e.target.closest("button.num"); if (!b) return;
-  const { d, c, m, k } = b.dataset;
-  const ls = pendLines().filter((l) => PEND_K[k](l) && (!d || l[PEND.depot] === d) && (!c || l[PEND.c] === c) && (!m || l[PEND.date].startsWith(m)));
-  openPendLines([d, c, m && monthLabel(m), PEND_K_LABEL[k]].filter(Boolean).join(" › "), ls);
+  const { d, c, m, k, ctry } = b.dataset;
+  const ls = pendLines().filter((l) => PEND_K[k](l) && (!d || l[PEND.depot] === d) && (!c || l[PEND.c] === c) && (!m || l[PEND.date].startsWith(m))
+    && (!ctry || depotCountry(l[PEND.depot]) === ctry));
+  openPendLines([ctry, d, c, m && monthLabel(m), PEND_K_LABEL[k]].filter(Boolean).join(" › "), ls);
 };
-const pendRow = (l) => ({ "Tank No": l[PEND.c], Depot: l[PEND.depot], Agent: l[PEND.agent], "Entry Date": l[PEND.date] ? new Date(l[PEND.date] + "T00:00") : "",
+const pendRow = (l) => ({ "Tank No": l[PEND.c], Country: depotCountry(l[PEND.depot]), Depot: l[PEND.depot], Agent: l[PEND.agent], "Entry Date": l[PEND.date] ? new Date(l[PEND.date] + "T00:00") : "",
   "Entry Activity": l[PEND.act], "Import BL": l[PEND.bl], "Work Order / Invoice": l[PEND.wo], "Cost Status": PEND_ST[l[PEND.st]], "Current Tank Status": l[PEND.now] });
-const PEND_WIDTHS = [14, 30, 30, 12, 30, 20, 30, 30, 26];
+const PEND_WIDTHS = [14, 22, 30, 30, 12, 30, 20, 30, 30, 26];
 function openPendLines(title, ls) {
   mr.pendLines = { title, ls };
   $("pTitle").textContent = `Billing Pendency › ${title}`;
@@ -2758,11 +2773,11 @@ function openPendLines(title, ls) {
 const closePendLines = () => { $("pendOverlay").classList.add("hidden"); mr.pendLines = null; };
 $("pClose").onclick = closePendLines;
 $("pendOverlay").onclick = (e) => { if (e.target === $("pendOverlay")) closePendLines(); };
-$("pXlsx").onclick = () => { const p = mr.pendLines; if (p) writeXlsx(`SAR_Billing_Pendency_${todayIso()}.xlsx`, [["Depot Entries", p.ls.map(pendRow), PEND_WIDTHS, 3]]); };
+$("pXlsx").onclick = () => { const p = mr.pendLines; if (p) writeXlsx(`SAR_Billing_Pendency_${todayIso()}.xlsx`, [["Depot Entries", p.ls.map(pendRow), PEND_WIDTHS, 4]]); };
 $("mrPendXlsx").onclick = () => {   // the depot × month table and every depot entry with its cost status
   const all = pendLines(), months = pendMonths(all.filter(notBooked));
   const row = (depot, tank, ls) => { const s = pendStats(ls);
-    const o = { "Depot Name": depot, Tank: tank, "Depot Entries": s.all, Booked: s.booked, Unbooked: s.not };
+    const o = { Country: depot && depot !== "GRAND TOTAL" ? depotCountry(depot) : "", "Depot Name": depot, Tank: tank, "Depot Entries": s.all, Booked: s.booked, Unbooked: s.not };
     for (const mo of months) o[monthLabel(mo)] = s.m[mo] || 0;
     return o; };
   const out = [];
@@ -2771,7 +2786,7 @@ $("mrPendXlsx").onclick = () => {   // the depot × month table and every depot 
     for (const [c, tl] of [...groupBy(ls, PEND.c)].sort((a, b) => a[0].localeCompare(b[0]))) out.push(row("", c, tl));
   }
   out.push(row("GRAND TOTAL", "", all));
-  writeXlsx(`SAR_Billing_Pendency_${todayIso()}.xlsx`, [["By Depot (Unbooked)", out, [30, 14, 12, 10, 10, ...months.map(() => 10)]], ["Depot Entries", all.map(pendRow), PEND_WIDTHS, 3]]);
+  writeXlsx(`SAR_Billing_Pendency_${todayIso()}.xlsx`, [["By Depot (Unbooked)", out, [22, 30, 14, 12, 10, 10, ...months.map(() => 10)]], ["Depot Entries", all.map(pendRow), PEND_WIDTHS, 4]]);
 };
 
 // ---- Total Inventory
