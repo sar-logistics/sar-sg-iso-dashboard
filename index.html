@@ -665,8 +665,8 @@
   body.finance-only #insSub, body.mr-only #insSub { display: none !important; }
   #tuTable tr.tu-sec td { font-weight: 700; color: var(--ink); border-top: 2px solid var(--line); }
   .mr-depot tr.dpc td { font-weight: 700; background: #F0F4FF; }
-  .mr-depot tr.pgt td { background: var(--grand); font-weight: 700; font-family: "JetBrains Mono", monospace; border-bottom: 2px solid #C7DAF3; }
-  .mr-depot tr.pgt td:first-child { font-family: "Plus Jakarta Sans", sans-serif; }
+  .mr-pivot tr.pgt td, .mr-depot tr.pgt td { background: var(--grand); font-weight: 700; font-family: "JetBrains Mono", monospace; border-bottom: 2px solid #C7DAF3; }
+  .mr-pivot tr.pgt td:first-child, .mr-depot tr.pgt td:first-child { font-family: "Plus Jakarta Sans", sans-serif; }
   /* Billing Pendency: Country → Unbooked stay frozen while the month columns scroll (user, 26 Nov);
      only when the table box is wide enough to still show months (container query), else just Country */
   .pend-wrap { container-type: inline-size; }
@@ -2878,8 +2878,8 @@ function renderMrPivot(tanks) {
     return `<tr class="lv0"><td><span class="dot" style="background:${MR_COLORS[b]}"></span> ${esc(a)}</td><td>${num(v, `data-a="${esc(a)}"`)}</td><td>${pc(v)}</td></tr>`;
   }).join("");
   $("mrPivot").innerHTML = `<thead><tr><th>Activity</th><th>Tanks</th><th>% of Total</th></tr></thead><tbody>${body
-    || '<tr><td colspan="3" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
-    <tfoot><tr><td>GRAND TOTAL</td><td>${num(total, 'data-all="1"')}</td><td>${total ? "100%" : "–"}</td></tr></tfoot>`;
+    ? `<tr class="pgt"><td>GRAND TOTAL</td><td>${num(total, 'data-all="1"')}</td><td>100%</td></tr>` + body   // Grand Total on top (user, 26 Nov)
+    : '<tr><td colspan="3" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>`;
 }
 $("mrPivot").onclick = (e) => {
   const b = e.target.closest("button.num"); if (!b) return;
