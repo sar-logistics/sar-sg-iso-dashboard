@@ -437,6 +437,10 @@
   .inv-table tr.ctot td.age60, .inv-table tfoot td.age60 { background: #F8D0CB; }
   .inv-table tr.ctot td { background: #F6F8FC; font-weight: 700; font-size: 13px; }
   .inv-table tr.ctot td.gt { background: #E4EBFA; }
+  .inv-table tr.igt td { background: var(--grand); font-weight: 700; font-size: 13px; border-bottom: 2px solid #C7DAF3; }
+  .inv-table tr.igt td.age30 { background: #FBEBB5; }
+  .inv-table tr.igt td.age60 { background: #F8D0CB; }
+  .inv-table tr.igt td.gt { background: #E4EBFA; }
   .inv-table .tg { margin-right: 6px; }
   @media (max-width: 1200px) { .kpis.inv-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 640px) { .kpis.inv-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .inv-table td.dep { min-width: 150px; } }
@@ -3233,8 +3237,8 @@ function renderInv() {
       <tr><th class="txt grp" colspan="5" style="text-align:left">Depot</th><th class="st"></th><th class="av" colspan="4">AV — days</th><th class="st" colspan="3"></th><th class="gt wrap" rowspan="1"></th></tr>
       <tr><th class="txt wrap">Depot Country</th><th class="txt dep wrap">Depot Name</th><th class="txt wrap">Depot Port</th><th class="txt wrap">Depot Agent</th><th class="txt wrap">Depot Billing Party</th>
         ${INV_COLS.map(([k, l]) => `<th class="${k.startsWith("av") ? "av" : "st"}">${l}</th>`).join("")}<th class="gt wrap">Grand Total</th></tr></thead>
-    <tbody>${body || '<tr><td colspan="14" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
-    <tfoot><tr><td class="txt">Grand Total</td><td class="txt dep"></td><td></td><td></td><td></td>${INV_COLS.map(([k]) => `<td class="${ageCls(k)}">${n0(grand[k])}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
+    <tbody>${body ? `<tr class="igt"><td class="txt ctry">Grand Total</td><td class="txt dep"></td><td></td><td></td><td></td>${nums(grand, 'data-all="1"')}</tr>` + body
+      : '<tr><td colspan="14" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>`;   // Grand Total on top, numbers open the tanks (user, 26 Nov)
   // freeze the two header rows and the Depot Name column (left offset = width of the Country column)
   const tbl = $("invTable"), hr = tbl.tHead.rows, h = hr[0].getBoundingClientRect().height;
   for (const th of hr[1].cells) th.style.top = `${h}px`;
@@ -3260,7 +3264,11 @@ $("invTable").onclick = (e) => {
   const tg = e.target.closest("[data-tg]");
   if (tg) { const k = tg.dataset.tg; inv.open.has(k) ? inv.open.delete(k) : inv.open.add(k); return renderInv(); }
   const b = e.target.closest("button.num"); if (!b) return;
-  const { k, country, c } = b.dataset;
+  const { k, country, c, all } = b.dataset;
+  if (all) {   // Grand Total: the tanks at every depot in the table (search / country applied)
+    const keys = new Set(invGroups().flatMap((g) => g.rows.map((r) => r.key)));
+    return openInvTanks(["Grand Total" + (inv.country ? ` · ${inv.country}` : ""), c ? INV_LABEL[c] : "All"].join(" › "), (t, r) => keys.has(r.key) && (!c || invCol(t) === c));
+  }
   const depots = new Map(invDepots().map((r) => [r.key, r]));
   const where = k ? depots.get(k)?.depot || k : `${country} Total`;
   openInvTanks([where, c ? INV_LABEL[c] : "All"].join(" › "),
