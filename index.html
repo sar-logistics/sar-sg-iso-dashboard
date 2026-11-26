@@ -3764,7 +3764,7 @@ function tuNone() {
 }
 // rows shown under each tank (and in the Grand Total block): k = monthly field, utilisation % is worked out from the days
 const TU_MEASURES = [["pct", "Utilisation %"], ["work", "Utilised Days"], ["rev", "Revenue (USD)"], ["cost", "Cost (USD)"], ["net", "Gross Profit (USD)"]];
-const TU_TANK_MORE = TU_MEASURES.filter(([k]) => k !== "pct");   // under a tank's + (Utilised Days too, user 25 Nov)
+const TU_TANK_MORE = TU_MEASURES.filter(([k]) => k !== "pct" && k !== "work");   // under a tank's + (Utilised Days removed from the report, user 26 Nov)
 function renderTu() {
   if (!tu.data) return;
   const rows = tuRows(), offRows = tuRows(true), ms = monthsBetween(tu.from, tu.to), dash = '<span class="dash">—</span>';
@@ -3782,7 +3782,7 @@ function renderTu() {
     + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
     + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
     + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
-  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % by month, highest utilisation first — + for average utilised days, utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % by month, highest utilisation first — + for average utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
   const val = (r, k, mo) => {
@@ -3881,7 +3881,7 @@ $("tuXlsx").onclick = () => {   // one row per tank and measure, months across (
   const avgV = (r, mo) => { const inF = (m) => r.m.idle[m] + r.m.work[m] > 0;
     if (mo) return inF(mo) ? r2(r.m.work[mo]) : null;
     const f = ms.filter(inF); return f.length ? r2(f.reduce((a, m) => a + r.m.work[m], 0) / f.length) : null; };
-  for (const r of tu.rows) for (const [k, h] of [...TU_MEASURES.slice(0, 1), ["avg", "Avg Utilised Days"], ...TU_MEASURES.slice(1)])
+  for (const r of tu.rows) for (const [k, h] of [...TU_MEASURES.slice(0, 1), ["avg", "Avg Utilised Days"], ...TU_TANK_MORE])
     rows.push(Object.fromEntries([["Tank No", r.c], ["Lessor", r.lessor], ["Current Status", r.last[1] || ""], ["Current Location", r.last[3] || ""],
       ["Measure", h], ["Grand Total", k === "avg" ? avgV(r, "") : v(r, k, "")], ...ms.map((mo) => [monthLabel(mo), k === "avg" ? avgV(r, mo) : v(r, k, mo)])]));
   writeXlsx(`SAR_Tank_Utilisation_${tu.from}_to_${tu.to}.xlsx`, [["Tank Utilisation", rows, [14, 26, 26, 24, 14, 12, ...ms.map(() => 10)]]]);
