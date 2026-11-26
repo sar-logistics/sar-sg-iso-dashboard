@@ -3782,7 +3782,7 @@ function renderTu() {
     + card("Revenue", "$" + tuMoney(rev), range, "#1F8A4C")
     + card("Cost", "$" + tuMoney(cost), range, "#C24A2E")
     + card("Gross Profit", (rev - cost < 0 ? "−$" : "$") + tuMoney(Math.abs(rev - cost)), rev ? `${((100 * (rev - cost)) / rev).toFixed(1)}% of revenue` : range, "#2C4E82");
-  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % by month, highest utilisation first — + for utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
+  $("tuTableSub").textContent = `${n0(rows.length)} tank${rows.length === 1 ? "" : "s"} · ${range} · utilisation % and average utilised days by month, highest utilisation first — + for utilised days, revenue, cost and gross profit; click a number for its detail, a tank for its history`;
 
   // one value of a measure for a month (mo) or the whole range (mo = "")
   const val = (r, k, mo) => {
@@ -3794,6 +3794,14 @@ function renderTu() {
   const fmt = (k, v) => (v == null || (k !== "pct" && !Math.round(v)) ? dash
     : k === "pct" ? v.toFixed(0) + "%" : ["rev", "cost", "net"].includes(k) ? tuMoney(v) : n0(v));
   const cls = (k, v) => (k === "net" && v ? (v < 0 ? ' class="neg"' : ' class="pos"') : "");
+  // a tank's average utilised days (user, 26 Nov): month = its utilised days that month (when in the fleet);
+  // Grand Total = the average over the months it was in the fleet — same rule as the Grand Total row
+  const tankAvg = (r) => {
+    const inFleet = ms.filter((mo) => r.m.idle[mo] + r.m.work[mo] > 0);
+    const gt = inFleet.length ? inFleet.reduce((a, mo) => a + r.m.work[mo], 0) / inFleet.length : null;
+    return [`<td class="gt">${gt == null ? dash : gt.toFixed(1)}</td>`,
+      ms.map((mo) => `<td>${r.m.idle[mo] + r.m.work[mo] > 0 ? n0(r.m.work[mo]) : dash}</td>`).join("")];
+  };
   // every number opens its detail (movement periods or invoice lines): data-c = tank ("" = all tanks), data-m = month ("" = all months)
   const btn = (r, k, mo) => { const v = val(r, k, mo), t = fmt(k, v); return t === dash ? t : `<button class="num" data-c="${esc(r.c || "")}" data-k="${k}" data-m="${mo}">${t}</button>`; };
   const cells = (r, k) => [`<td class="gt"${cls(k, val(r, k, ""))}>${btn(r, k, "")}</td>`, ms.map((mo) => `<td${cls(k, val(r, k, mo))}>${btn(r, k, mo)}</td>`).join("")];
@@ -3822,6 +3830,7 @@ function renderTu() {
     const open = tu.open.has(r.c), tip = [r.lessor && `Lessor ${r.lessor}`, r.rate != null && `$${r.rate}/day`, r.last[1] && `Now: ${r.last[1]} at ${r.last[3] || "—"} since ${shortDate(r.last[0])}`].filter(Boolean).join(" · ");
     body += row("", `<td class="nm" title="${esc(tip)}"><button class="tg" data-tg="${esc(r.c)}" aria-expanded="${open}">${open ? "−" : "+"}</button>`
       + `<button class="num tk" data-c="${esc(r.c)}">${esc(r.c)}</button>${r.split ? " *" : ""}<span class="tu-now ${r.last[2] || ""}">${r.last[2] ? esc(r.last[5] || TU_STATE[r.last[2]]) : ""}</span></td>`, cells(r, "pct"));
+    body += row("sub avg", '<td class="nm" title="Months: the tank’s utilised days that month. Grand Total: average utilised days per month over the months it was in the fleet">Avg Utilised Days</td>', tankAvg(r));
     if (open) for (const [k, h] of TU_TANK_MORE) body += row("sub", `<td class="nm">${h}</td>`, cells(r, k));
   } };
   tankRows(rows.slice(0, 1500));
@@ -3867,9 +3876,12 @@ $("tuXlsx").onclick = () => {   // one row per tank and measure, months across (
     return r2(k === "net" ? get("rev") - get("cost") : get(k));
   };
   const rows = [];
-  for (const r of tu.rows) for (const [k, h] of TU_MEASURES)
+  const avgV = (r, mo) => { const inF = (m) => r.m.idle[m] + r.m.work[m] > 0;
+    if (mo) return inF(mo) ? r2(r.m.work[mo]) : null;
+    const f = ms.filter(inF); return f.length ? r2(f.reduce((a, m) => a + r.m.work[m], 0) / f.length) : null; };
+  for (const r of tu.rows) for (const [k, h] of [...TU_MEASURES.slice(0, 1), ["avg", "Avg Utilised Days"], ...TU_MEASURES.slice(1)])
     rows.push(Object.fromEntries([["Tank No", r.c], ["Lessor", r.lessor], ["Current Status", r.last[1] || ""], ["Current Location", r.last[3] || ""],
-      ["Measure", h], ["Grand Total", v(r, k, "")], ...ms.map((mo) => [monthLabel(mo), v(r, k, mo)])]));
+      ["Measure", h], ["Grand Total", k === "avg" ? avgV(r, "") : v(r, k, "")], ...ms.map((mo) => [monthLabel(mo), k === "avg" ? avgV(r, mo) : v(r, k, mo)])]));
   writeXlsx(`SAR_Tank_Utilisation_${tu.from}_to_${tu.to}.xlsx`, [["Tank Utilisation", rows, [14, 26, 26, 24, 14, 12, ...ms.map(() => 10)]]]);
 };
 
