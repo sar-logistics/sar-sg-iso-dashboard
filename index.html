@@ -1126,6 +1126,16 @@
 <main id="invPage" class="hidden">
   <div class="alert hidden" id="invErr" role="alert"></div>
   <div class="kpis inv-kpis" id="invKpis"></div>
+  <section class="card panel" id="invTrendCard">
+    <div class="tools" style="justify-content:space-between">
+      <div><h2>Inventory Trend</h2><p class="sub" style="margin-bottom:0" id="invTrendSub">Tanks at depots by status, saved once a day — click a bar for the tanks</p></div>
+      <div class="view-toggle" id="invTrendPer" role="group" aria-label="Period">
+        <button data-p="day" aria-pressed="true">Daily</button><button data-p="week" aria-pressed="false">Weekly</button><button data-p="month" aria-pressed="false">Monthly</button>
+      </div>
+    </div>
+    <div class="chart" style="height:320px"><canvas id="invTrendChart"></canvas></div>
+    <p class="foot" style="margin:10px 0 0" id="invTrendFoot"></p>
+  </section>
   <section class="card panel">
     <div class="tools" style="justify-content:space-between">
       <div><h2>Depot Inventory</h2><p class="sub" style="margin-bottom:0">Tanks at a depot by status — click a number for the tanks</p></div>
@@ -2993,6 +3003,7 @@ async function loadInv(force) {
   try {
     if (force || !mr.data) setMrData(await api("/api/mongo", { dataset: "mr" }));
     renderInv();
+    if (force || !invT.data) loadInvTrend(); else renderInvTrend();
   } catch (e) {
     if (e.message === "signed out" || e.message === "no access") return;
     $("invErr").textContent = "Could not load tank inventory: " + e.message; $("invErr").classList.remove("hidden");
@@ -3030,6 +3041,59 @@ function invSum(list) {
   for (const r of list) { for (const [k] of INV_COLS) o[k] += r[k]; o.total += r.total; }
   return o;
 }
+
+// ---- Inventory Trend: one saved picture per day (the API saves it the first time the inventory loads each day and
+// again when newer data arrives; inventorySnapshots in MongoDB). Weekly / monthly = the last saved day of each period.
+const invT = { data: null, per: "day", err: "" };
+const INV_TREND = [["al", "Allocated (AL)", "#7B5EA7", ["al"]], ["av30", "Available <30 Days", "#1F8A4C", ["av30"]],
+  ["avold", "Available >30 Days", "#D98E04", ["av60", "av90", "av91"]], ["uc", "Under Cleaning (UC)", "#0E9AA7", ["uc"]],
+  ["ur", "Under Repair (UR)", "#C24A2E", ["ur"]], ["us", "Under Survey (US)", "#E0712B", ["us"]]];
+async function loadInvTrend() {
+  try { invT.data = await api("/api/mongo", { dataset: "invTrend" }); invT.err = ""; }
+  catch (e) { if (e.message === "signed out" || e.message === "no access") return; invT.err = e.message; }
+  renderInvTrend();
+}
+function invTrendPoints() {
+  const days = invT.data?.days || [], key = (d) => (invT.per === "month" ? d.slice(0, 7) : invT.per === "week" ? mondayOf(d) : d);
+  const last = new Map(); for (const day of days) last.set(key(day[0]), day);   // days come oldest first: the last one of each period wins
+  return [...last].map(([k, [date, rows]]) => {
+    const n = Object.fromEntries(INV_COLS.map(([c]) => [c, 0]));
+    for (const [country, col, v] of rows) if (!inv.country || (country || NO_COUNTRY) === inv.country) n[col] += v;
+    return { k, date, n, label: invT.per === "month" ? monthLabel(k) : invT.per === "week" ? isoWeekName(k) : shortDate(k) };
+  });
+}
+function renderInvTrend() {
+  for (const b of $("invTrendPer").children) b.setAttribute("aria-pressed", b.dataset.p === invT.per);
+  const pts = invTrendPoints();
+  $("invTrendFoot").textContent = invT.err ? "Could not load the trend: " + invT.err
+    : `Saving started 26 Nov 2026 — one point per day from then on${pts.length ? ` (${n0((invT.data?.days || []).length)} day${(invT.data?.days || []).length === 1 ? "" : "s"} saved so far)` : ""}. `
+      + "Each day keeps its latest picture; a day is saved when the inventory is first opened that day (and again after a newer sync). "
+      + "Weekly / Monthly show the last saved day of each week / month. Same columns as the cards above; Country filter applies.";
+  charts.invTrend?.destroy();
+  if (!pts.length) return;
+  const sum = (p, cols) => cols.reduce((a, c) => a + p.n[c], 0), tot = pts.map((p) => INV_TREND.reduce((a, [, , , cols]) => a + sum(p, cols), 0));
+  charts.invTrend = new Chart($("invTrendChart"), {
+    type: "bar",
+    data: { labels: pts.map((p) => p.label), datasets: INV_TREND.map(([k, label, color, cols]) => ({ label, data: pts.map((p) => sum(p, cols)), backgroundColor: color, maxBarThickness: 46, col: k })) },
+    options: {
+      maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } },
+      plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { title: (c) => `${pts[c[0].dataIndex].label}${invT.per === "day" ? "" : ` (as on ${shortDate(pts[c[0].dataIndex].date)})`}`,
+        footer: (c) => `Tanks at depots: ${n0(tot[c[0].dataIndex])}` } } },
+      onClick: (_, els) => { if (els[0]) openInvTrendTanks(pts[els[0].index], INV_TREND[els[0].datasetIndex]); },
+      onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
+    },
+  });
+}
+// the tanks behind a bar: that day's tank numbers, shown with their details as they are now
+async function openInvTrendTanks(p, [, label, , cols]) {
+  try {
+    const d = await api("/api/mongo", { dataset: "invTrendDay", date: p.date });
+    const set = new Set(d.rows.filter(([country, , col]) => cols.includes(col) && (!inv.country || (country || NO_COUNTRY) === inv.country)).flatMap((r) => r[3]));
+    openTanks({ title: `${label} on ${shortDate(p.date)}${inv.country ? ` · ${inv.country}` : ""} — ${n0(set.size)} tanks (details as they are now)`, allPrincipals: true, test: (t) => set.has(t.c) });
+  } catch (e) { if (e.message !== "signed out" && e.message !== "no access") { invT.err = e.message; renderInvTrend(); } }
+}
+$("invTrendPer").onclick = (e) => { const b = e.target.closest("button[data-p]"); if (!b) return; invT.per = b.dataset.p; renderInvTrend(); };
 
 function renderInv() {
   if (!mr.data) return;
@@ -3076,7 +3140,7 @@ function renderInv() {
   for (const c of tbl.querySelectorAll(".dep")) c.style.left = left;
   $("invToggleAll").textContent = groups.every((g) => !inv.closed.has(g.country)) ? "Collapse all" : "Expand all";
 }
-$("invCountry").onchange = (e) => { inv.country = e.target.value; renderInv(); };
+$("invCountry").onchange = (e) => { inv.country = e.target.value; renderInv(); renderInvTrend(); };
 $("invSearch").oninput = (e) => { inv.q = e.target.value; renderInv(); };
 $("invToggleAll").onclick = () => {
   const groups = invGroups();

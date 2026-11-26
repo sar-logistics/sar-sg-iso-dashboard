@@ -4,6 +4,8 @@
 //   POST /api/mongo  { dataset: "sales" } -> sales lines for the dashboard (signed in)
 //   POST /api/mongo  { dataset: "mr" }    -> current tank inventory for M&R Operations (signed in)
 //   POST /api/mongo  { dataset: "deploy" } -> export BLs with their tanks for Tank Deployment (signed in)
+//   POST /api/mongo  { dataset: "invTrend" } -> Current Tank Inventory per day (counts by country and column)  (signed in)
+//   POST /api/mongo  { dataset: "invTrendDay", date: "YYYY-MM-DD" } -> that day's tanks per depot and column  (signed in)
 //   POST /api/mongo  { dataset: "finance" } -> open receivable / payable invoices with due dates (signed in)
 //   Role "finance" may only ask for me, finance and financeRemarks; role "mr" only me and mr; everything else is refused (403 report_only).
 //   POST /api/mongo  { dataset: "financeRemarks" } -> remarks per party (signed in)
@@ -289,7 +291,7 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v15";
+const MR_SNAPSHOT_ID = "mr-inventory-v16";
 // Dummy depots in SARFD (test entries, not real depots): left out of M&R Operations / Current Tank Inventory (user, 25 Nov 2026)
 const DUMMY_DEPOTS = new Set(["TACOMA DEPOT"]);
 const isDummyDepot = (v) => DUMMY_DEPOTS.has(s(v).toUpperCase());
@@ -529,16 +531,74 @@ async function mrDataset() {
 
     const cache = db.collection("dashboardCache");
     const snap = await cache.findOne({ _id: MR_SNAPSHOT_ID });
-    if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
+    if (snap?.key === key) {
+      const payload = JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
+      await saveInventorySnapshot(db, payload).catch((e) => console.error(e));
+      return payload;
+    }
 
     const payload = await buildMr(db, lastSync);
     const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
     await cache.replaceOne({ _id: MR_SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
+    await saveInventorySnapshot(db, payload).catch((e) => console.error(e));
     return payload;
   })();
   g._sarMr = { at: Date.now(), data };
   data.catch(() => { g._sarMr = undefined; });
   return data;
+}
+
+// ---------------------------------------------------------------- Current Tank Inventory trend
+//
+// One document per day (IST) in inventorySnapshots, saved from the M&R data the first time it is loaded that day and
+// again whenever newer data arrives, so the day keeps its latest picture (user, 26 Nov 2026: "start building trend from today").
+// Same columns as the Current Tank Inventory page (invCol / invDepots in index.html — keep in step):
+//   al = Empty allocated to shipper, av30 / av60 / av90 / av91 = Empty available by days since the last movement,
+//   uc = under cleaning, ur = under repair, us = under survey. Country = the depot's country found in SARFD (else blank).
+// rows: [country, depot, column, [tank numbers]]
+const INV_SNAP = "inventorySnapshots";
+const istDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(d);
+function invColumn(t, today) {
+  if (t.bucket === "Under Cleaning") return "uc";
+  if (t.bucket === "Under Repair") return "ur";
+  if (t.bucket === "Under Survey") return "us";
+  if (t.bucket !== "Empty") return null;
+  if (t.activity.includes("ALLOCATED")) return "al";
+  const d = t.date ? Math.max(0, Math.round((Date.parse(today) - Date.parse(t.date)) / 86400000)) : 0;
+  return d <= 30 ? "av30" : d <= 60 ? "av60" : d <= 90 ? "av90" : "av91";
+}
+async function saveInventorySnapshot(db, payload) {
+  const date = istDay(), coll = db.collection(INV_SNAP);
+  const have = await coll.findOne({ _id: date }, { projection: { dataAt: 1 } });
+  const dataAt = payload.generatedAt || null;
+  if (have && have.dataAt && dataAt && have.dataAt >= dataAt) return;   // already saved from this (or newer) data
+  const loc = (v) => s(v).replace(/\s+/g, " ").toUpperCase();
+  const m = new Map();
+  for (const t of payload.tanks || []) {
+    const col = invColumn(t, date); if (!col) continue;
+    const key = loc(t.to) || "(NO LOCATION)", D = payload.depots?.[key] || {};
+    const country = (D.filled || []).includes("country") ? "" : D.country || "";
+    const k = `${key}|${col}`;
+    let r = m.get(k); if (!r) m.set(k, r = [country, s(t.to) || "(No location)", col, []]);
+    r[3].push(t.c);
+  }
+  await coll.replaceOne({ _id: date }, { date, dataAt, savedAt: new Date(), lastSync: payload.lastSync || null, rows: [...m.values()] }, { upsert: true });
+}
+async function invTrendDataset() {
+  const db = await getDb();
+  const docs = await db.collection(INV_SNAP).find({}, { projection: { rows: 1, lastSync: 1 } }).sort({ _id: 1 }).toArray();
+  // per day: [date, [[country, column, tanks], …]] (counts only; invTrendDay has the tank numbers)
+  return { days: docs.map((d) => {
+    const n = new Map();
+    for (const [country, , col, tanks] of d.rows) { const k = `${country}|${col}`; n.set(k, (n.get(k) || 0) + tanks.length); }
+    return [d._id, [...n].map(([k, v]) => [...k.split("|"), v])];
+  }) };
+}
+async function invTrendDay(body) {
+  const date = String(body.date || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, "date must be YYYY-MM-DD");
+  const d = await (await getDb()).collection(INV_SNAP).findOne({ _id: date }, { projection: { rows: 1 } });
+  return { date, rows: d?.rows || [] };
 }
 
 // ---------------------------------------------------------------- Tank Utilisation dataset
@@ -1247,6 +1307,8 @@ export async function runRequest(body, user) {
   if (body.dataset === "deploy") return deployDataset();
   if (body.dataset === "quotations") return quotationsDataset();
   if (body.dataset === "tanks") return tankStatusDataset();
+  if (body.dataset === "invTrend") return invTrendDataset();
+  if (body.dataset === "invTrendDay") return invTrendDay(body);
   if (body.dataset === "finance") return financeDataset();
   if (body.dataset === "financeRemarks") return financeRemarks();
   if (body.action === "saveFinanceRemark") return saveFinanceRemark(body, user);
