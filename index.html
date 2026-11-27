@@ -3194,18 +3194,17 @@ function renderInvTrend() {
   $("invTrendTable").onclick = (e) => { const td = e.target.closest("td.num"); if (!td) return; const r = +td.dataset.r;
     openInvTrendTanks(pts[+td.dataset.i], r ? INV_TREND[r - 1] : ALL); };
   charts.invTrend = new Chart($("invTrendChart"), {
-    type: "line",   // one line per status plus the total (user, 26 Nov)
+    type: "line",   // only the Tanks at Depots line (user, 27 Nov); the status split is in the table below
     data: { labels: pts.map((p) => p.label), datasets: [
-      { label: "Tanks at Depots", data: tot, borderColor: "#1E3A8A", backgroundColor: "#1E3A8A", borderWidth: 3, borderDash: [6, 4], pointRadius: 4, pointHoverRadius: 6, tension: 0.25 },
-      ...INV_TREND.map(([, label, color, cols]) => ({ label, data: pts.map((p) => sum(p, cols)), borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, tension: 0.25 }))] },
+      { label: "Tanks at Depots", data: tot, borderColor: "#1E3A8A", backgroundColor: "rgb(30 58 138 / .08)", fill: true, borderWidth: 3, pointRadius: 4, pointHoverRadius: 6, tension: 0.25 }] },
     options: {
       maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
       scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } },
-      plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { title: (c) => `${pts[c[0].dataIndex].label}${invT.per === "day" ? "" : ` (as on ${shortDate(pts[c[0].dataIndex].date)})`}`,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { title: (c) => `${pts[c[0].dataIndex].label}${invT.per === "day" ? "" : ` (as on ${shortDate(pts[c[0].dataIndex].date)})`}`,
         } } },
       // a point: that line's tanks on that day (Tanks at Depots = all of them)
-      onClick: (e, _, chart) => { const els = chart.getElementsAtEventForMode(e, "nearest", { intersect: false }, true); if (!els[0]) return; const i = els[0].datasetIndex;
-        openInvTrendTanks(pts[els[0].index], i ? INV_TREND[i - 1] : ["", "Tanks at depots", "", INV_COLS.map(([c]) => c)]); },
+      onClick: (e, _, chart) => { const els = chart.getElementsAtEventForMode(e, "nearest", { intersect: false }, true); if (!els[0]) return;
+        openInvTrendTanks(pts[els[0].index], ["", "Tanks at depots", "", INV_COLS.map(([c]) => c)]); },
       onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
     },
   });
