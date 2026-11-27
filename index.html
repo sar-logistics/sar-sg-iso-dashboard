@@ -436,6 +436,11 @@
   .inv-table tr.ctot td.age60, .inv-table tfoot td.age60 { background: #F8D0CB; }
   .inv-table tr.ctot td { background: #F6F8FC; font-weight: 700; font-size: 13px; }
   .inv-table tr.ctot td.gt { background: #E4EBFA; }
+  .inv-trend-tbl td.num { cursor: pointer; }
+  .inv-trend-tbl td.num:hover { color: var(--accent); text-decoration: underline; }
+  .inv-trend-tbl tr.itot td { background: var(--grand); font-weight: 700; }
+  .inv-trend-tbl td.chg.up { color: #C24A2E; } .inv-trend-tbl td.chg.dn { color: var(--good); }
+  .inv-trend-tbl td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
   .inv-table tr.igt td { background: var(--grand); font-weight: 700; font-size: 13px; border-bottom: 2px solid #C7DAF3; }
   .inv-table tr.igt td.age30 { background: #FBEBB5; }
   .inv-table tr.igt td.age60 { background: #F8D0CB; }
@@ -1172,7 +1177,7 @@
       <div class="tools" style="margin:0">
         <div class="view-toggle" id="invViewToggle" role="group" aria-label="Show as">
           <button data-mode="table" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>Table</button>
-          <button data-mode="graph" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20h18"/><path d="M4 16l5-6 4 3.5L20 6"/></svg>Graph</button>
+          <button data-mode="graph" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20h18"/><path d="M4 16l5-6 4 3.5L20 6"/></svg>Trend</button>
         </div>
         <span class="inv-tbl-only" style="display:contents">
           <input class="search" id="invSearch" placeholder="Search country, depot, port, agent…">
@@ -1187,6 +1192,8 @@
     <!-- Graph view: the Inventory Trend (one saved picture per day) -->
     <div class="hidden" id="invGraphView">
       <div class="chart" style="height:360px"><canvas id="invTrendChart"></canvas></div>
+      <!-- the trend's numbers as a table, one column per saved day / week / month (user, 27 Nov) -->
+      <div class="tbl-wrap" style="margin-top:14px;max-height:none"><table class="inv-trend-tbl" id="invTrendTable"></table></div>
       <p class="foot" style="margin:10px 0 0" id="invTrendFoot"></p>
     </div>
     <div id="invTableView">
@@ -3167,8 +3174,19 @@ function renderInvTrend() {
       + "Each day keeps its latest picture; a day is saved when the inventory is first opened that day (and again after a newer sync). "
       + "Weekly / Monthly show the last saved day of each week / month. Same columns as the cards above; Country filter applies.";
   charts.invTrend?.destroy(); charts.invTrend = null;
+  $("invTrendTable").innerHTML = "";
   if (!pts.length || invT.view !== "graph") return;
   const sum = (p, cols) => cols.reduce((a, c) => a + p.n[c], 0), tot = pts.map((p) => INV_TREND.reduce((a, [, , , cols]) => a + sum(p, cols), 0));
+  // table: one row per line of the chart, one column per point; Change = last point minus the one before it
+  const ALL = ["", "Tanks at depots", "#1E3A8A", INV_COLS.map(([c]) => c)];
+  const tRows = [[ALL, tot], ...INV_TREND.map((L) => [L, pts.map((p) => sum(p, L[3]))])];
+  const chg = (v) => { if (pts.length < 2) return '<td class="chg">—</td>'; const d = v[v.length - 1] - v[v.length - 2];
+    return `<td class="chg ${d > 0 ? "up" : d < 0 ? "dn" : ""}">${d > 0 ? "+" : ""}${n0(d)}</td>`; };
+  $("invTrendTable").innerHTML = `<thead><tr><th>Status</th>${pts.map((p) => `<th>${esc(p.label)}</th>`).join("")}<th>Change</th></tr></thead><tbody>`
+    + tRows.map(([L, v], r) => `<tr class="${r ? "" : "itot"}"><td><span class="sw" style="background:${L[2]}"></span>${esc(r ? L[1] : "Tanks at Depots")}</td>`
+      + v.map((x, i) => `<td class="num" data-r="${r}" data-i="${i}">${n0(x)}</td>`).join("") + chg(v) + "</tr>").join("") + "</tbody>";
+  $("invTrendTable").onclick = (e) => { const td = e.target.closest("td.num"); if (!td) return; const r = +td.dataset.r;
+    openInvTrendTanks(pts[+td.dataset.i], r ? INV_TREND[r - 1] : ALL); };
   charts.invTrend = new Chart($("invTrendChart"), {
     type: "line",   // one line per status plus the total (user, 26 Nov)
     data: { labels: pts.map((p) => p.label), datasets: [
