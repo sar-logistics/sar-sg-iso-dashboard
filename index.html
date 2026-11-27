@@ -98,6 +98,16 @@
   .select:focus, .f select:focus, .f input:focus { outline: none; border-color: var(--accent); }
   label.f { display: flex; align-items: center; gap: 9px; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--accent); }
   .f select { min-width: 118px; }
+  /* Dashboard-styled list for every dropdown (user, 27 Nov); the native <select> stays underneath and keeps its value */
+  select.dd-open { border-color: var(--accent); }
+  .dd-panel { position: fixed; z-index: 1000; max-height: 320px; overflow-y: auto; padding: 6px; background: #fff; border: 1px solid var(--line); border-radius: 12px;
+              box-shadow: 0 12px 32px rgb(15 42 77 / .16); font: 600 13px "Plus Jakarta Sans", sans-serif; color: var(--ink); }
+  .dd-opt { position: relative; padding: 8px 34px 8px 12px; border-radius: 8px; white-space: nowrap; cursor: pointer; }
+  .dd-opt.hi { background: #EFF4FF; color: var(--accent); }
+  .dd-opt.sel { color: var(--accent); font-weight: 700; }
+  .dd-opt.sel::after { content: ""; position: absolute; right: 12px; top: 50%; width: 5px; height: 9px; margin-top: -6px;
+                       border: solid var(--accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .dd-opt.dis { opacity: .45; cursor: default; }
   .drf-divider { width: 1px; height: 28px; background: var(--line); }
   .btn-primary { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 999px; padding: 9px 16px; background: var(--grad); color: #fff;
                  font-size: 12.5px; font-weight: 700; box-shadow: 0 2px 6px #2C4E8245, 0 1px 2px #2C4E8230; transition: box-shadow .15s, transform .12s; }
@@ -4784,6 +4794,73 @@ function frame(t) {
       if (el.offsetParent && el.dataset.cuDone === el.textContent) { delete el.dataset.cuDone; wrote.delete(el); animate(el); }
     }), 0);
   }, true);
+})();
+
+// Dashboard-styled dropdown lists (user, 27 Nov): opening any <select> shows our own list instead of the browser's grey one.
+// The real <select> keeps the value and fires the usual change event, so every filter works as before. Phones keep their own picker.
+(() => {
+  if (matchMedia("(pointer: coarse)").matches) return;
+  let open = null;   // { sel, panel, idx }
+  const usable = (sel) => sel && !sel.disabled && !sel.multiple && sel.size <= 1;
+  const close = () => { if (!open) return; open.panel.remove(); open.sel.classList.remove("dd-open"); open = null; };
+  const opts = () => [...open.panel.children];
+  const hi = (i, scroll) => {
+    const list = opts(); if (!list.length) return;
+    i = Math.max(0, Math.min(list.length - 1, i));
+    list.forEach((el, k) => el.classList.toggle("hi", k === i)); open.idx = i;
+    if (scroll) list[i].scrollIntoView({ block: "nearest" });
+  };
+  const move = (step) => { const list = opts(); let i = open.idx;
+    do { i += step; } while (list[i] && list[i].classList.contains("dis")); if (list[i]) hi(i, true); };
+  const choose = (i) => {
+    const sel = open.sel; close(); sel.focus();
+    if (i >= 0 && sel.selectedIndex !== i && !sel.options[i].disabled) {
+      sel.selectedIndex = i;
+      sel.dispatchEvent(new Event("input", { bubbles: true })); sel.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  };
+  const show = (sel) => {
+    close();
+    const panel = document.createElement("div"); panel.className = "dd-panel"; panel.setAttribute("role", "listbox");
+    [...sel.options].forEach((o, i) => {
+      const d = document.createElement("div"); d.className = "dd-opt" + (i === sel.selectedIndex ? " sel" : "") + (o.disabled ? " dis" : "");
+      d.textContent = o.text; d.dataset.i = i; d.setAttribute("role", "option"); panel.append(d);
+    });
+    document.body.append(panel);
+    const r = sel.getBoundingClientRect(); panel.style.minWidth = r.width + "px";
+    const h = panel.offsetHeight, below = innerHeight - r.bottom - 8;
+    panel.style.top = (below >= h || below >= r.top ? r.bottom + 4 : Math.max(8, r.top - 4 - h)) + "px";
+    panel.style.left = Math.max(8, Math.min(r.left, innerWidth - panel.offsetWidth - 8)) + "px";
+    open = { sel, panel, idx: 0 }; sel.classList.add("dd-open"); hi(Math.max(0, sel.selectedIndex), true);
+    panel.addEventListener("mousedown", (e) => e.preventDefault());   // keep focus on the select
+    panel.addEventListener("mousemove", (e) => { const o = e.target.closest(".dd-opt"); if (o && !o.classList.contains("dis")) hi(+o.dataset.i); });
+    panel.addEventListener("click", (e) => { const o = e.target.closest(".dd-opt"); if (o && !o.classList.contains("dis")) choose(+o.dataset.i); });
+  };
+  document.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    const sel = e.target.closest?.("select");
+    if (usable(sel)) { e.preventDefault(); if (open && open.sel === sel) close(); else { sel.focus(); show(sel); } return; }
+    if (open && !open.panel.contains(e.target)) close();
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    if (open) {
+      const k = e.key;
+      if (k === "ArrowDown" || k === "ArrowUp") { move(k === "ArrowDown" ? 1 : -1); e.preventDefault(); }
+      else if (k === "Home" || k === "End") { hi(k === "Home" ? 0 : opts().length - 1, true); e.preventDefault(); }
+      else if (k === "Enter" || k === " ") { choose(open.idx); e.preventDefault(); }
+      else if (k === "Escape" || k === "Tab") { const sel = open.sel; close(); if (k === "Escape") { sel.focus(); e.preventDefault(); } }
+      else if (k.length === 1) {   // type a letter: jump to the next option starting with it
+        const list = opts(), n = list.length, c = k.toLowerCase();
+        for (let j = 1; j <= n; j++) { const i = (open.idx + j) % n; if (list[i].textContent.trim().toLowerCase().startsWith(c)) { hi(i, true); break; } }
+        e.preventDefault();
+      }
+      return;
+    }
+    const sel = e.target;
+    if (sel.tagName === "SELECT" && usable(sel) && (e.key === " " || e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); show(sel); }
+  }, true);
+  document.addEventListener("scroll", (e) => { if (open && !open.panel.contains(e.target)) close(); }, true);
+  addEventListener("resize", close); addEventListener("blur", close);
 })();
 
 // Frozen Grand Total row: keep --thh on every table = its header height (headers wrap / zoom / tabs open)
