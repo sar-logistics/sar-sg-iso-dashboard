@@ -211,6 +211,10 @@
   .tbl-wrap tfoot td { z-index: 3; }
   .tbl-wrap thead th:first-child { left: 0; z-index: 5; background: var(--thead); box-shadow: inset -1px 0 0 var(--line); }
   .tbl-wrap tfoot td:first-child { left: 0; z-index: 4; background: var(--grand); box-shadow: inset -1px 0 0 var(--line); }
+  /* Grand Total rows on top stay frozen just under the header (user, 27 Nov); --thh = header height, set by JS */
+  .tbl-wrap tr:is(.pgt,.dgt,.ltot,.fgt,.igt) > td { position: sticky; top: var(--thh, 0px); z-index: 3 !important; box-shadow: 0 1px 0 #C7DAF3; }
+  .tbl-wrap tr:is(.pgt,.dgt,.ltot,.fgt,.igt) > td:first-child, .inv-table tr.igt > td.dep, .dep-table tr.dgt > :nth-child(-n+3),
+  .mr-pend tr.pgt > :nth-child(-n+6), #detailTable.lanes tr.ltot > :nth-child(2) { z-index: 4 !important; box-shadow: inset -1px 0 0 var(--line), 0 1px 0 #C7DAF3; }
   .modal thead th:first-child { background: var(--paper); }
   td.name { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
   td .num { border: 0; background: none; padding: 0; color: inherit; font-size: inherit; }
@@ -4755,6 +4759,16 @@ function frame(t) {
       if (el.offsetParent && el.dataset.cuDone === el.textContent) { delete el.dataset.cuDone; wrote.delete(el); animate(el); }
     }), 0);
   }, true);
+})();
+
+// Frozen Grand Total row: keep --thh on every table = its header height (headers wrap / zoom / tabs open)
+(() => {
+  const ro = new ResizeObserver((es) => es.forEach((e) => {
+    const t = e.target.closest("table"); if (t) t.style.setProperty("--thh", e.target.offsetHeight + "px");
+  }));
+  const watch = (t) => { if (t.tHead) ro.observe(t.tHead); };
+  const mo = new MutationObserver((ms) => ms.forEach((m) => watch(m.target)));
+  document.querySelectorAll(".tbl-wrap table").forEach((t) => { watch(t); mo.observe(t, { childList: true }); });
 })();
 </script>
 <script>
