@@ -1268,7 +1268,7 @@
 
 <main id="logPage" class="hidden">
   <div class="admin-panel-head">
-    <div><h1>Dashboard Log</h1><p id="syncLogSub">SARFD → Google Sheet → MongoDB sync runs, newest first. Scheduled at 9 am and 1 pm IST (runs on GitHub, may start a few minutes late).</p></div>
+    <div><h1>Dashboard Log</h1><p id="syncLogSub">SARFD → Google Sheet → MongoDB sync runs, newest first. Scheduled at 8:50 am and 12:50 pm IST (runs on GitHub, may start a few minutes late).</p></div>
     <div class="ua-actions">
       <button type="button" class="import-users-btn" id="syncLogRefresh">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>
@@ -4337,7 +4337,7 @@ $("syncLogRefresh").onclick = loadSyncLog;
 function renderSyncLog() {
   const runs = state.syncLog?.runs || [];
   const ok = runs.find((r) => r.status !== "failed");
-  $("syncLogSub").innerHTML = "SARFD → Google Sheet → MongoDB sync runs, newest first. Scheduled at 9 am and 1 pm IST (runs on GitHub, may start a few minutes late)."
+  $("syncLogSub").innerHTML = "SARFD → Google Sheet → MongoDB sync runs, newest first. Scheduled at 8:50 am and 12:50 pm IST (runs on GitHub, may start a few minutes late)."
     + (ok ? ` Last successful sync: <b>${esc(fmtLogin(ok.endedAt || ok.startedAt))}</b> (${esc(ago(ok.endedAt || ok.startedAt))}).` : "");
   if (!runs.length) { $("syncLogBody").innerHTML = '<tr><td colspan="6" class="ua-empty">No sync runs recorded yet.</td></tr>'; return; }
   $("syncLogBody").innerHTML = runs.map((r, i) => {
