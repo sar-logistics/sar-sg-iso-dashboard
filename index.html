@@ -1194,6 +1194,7 @@
           <button class="btn" id="invToggleAll">Expand all</button>
           <button class="btn" id="invXlsx">Export to Excel</button>
         </span>
+        <span id="invTrendDates" style="display:contents"><label class="f hidden">From <input type="date" id="invTrendFrom"></label><label class="f hidden">To <input type="date" id="invTrendTo"></label></span>
         <div class="view-toggle hidden" id="invTrendPer" role="group" aria-label="Period">
           <button data-p="day" aria-pressed="true">Daily</button><button data-p="week" aria-pressed="false">Weekly</button><button data-p="month" aria-pressed="false">Monthly</button>
         </div>
@@ -3150,13 +3151,14 @@ function invSum(list) {
 
 // ---- Inventory Trend: one saved picture per day (the API saves it the first time the inventory loads each day and
 // again when newer data arrives; inventorySnapshots in MongoDB). Weekly / monthly = the last saved day of each period.
-const invT = { data: null, per: "day", err: "", view: "table" };   // Depot Inventory opens in Table view (user, 26 Nov)
+const invT = { data: null, per: "day", err: "", view: "table", from: "", to: "" };   // from / to: trend date filter (user, 27 Nov; blank = all saved days)   // Depot Inventory opens in Table view (user, 26 Nov)
 function setInvView(v) {
   invT.view = v === "graph" ? "graph" : "table";
   const g = invT.view === "graph";
   for (const b of $("invViewToggle").children) b.setAttribute("aria-pressed", b.dataset.mode === invT.view);
   $("invGraphView").classList.toggle("hidden", !g); $("invTableView").classList.toggle("hidden", g);
   $("invTrendPer").classList.toggle("hidden", !g);
+  for (const el of $("invTrendDates").children) el.classList.toggle("hidden", !g);
   for (const el of document.querySelectorAll(".inv-tbl-only > *")) el.classList.toggle("hidden", g);
   $("invCardSub").textContent = g ? "Tanks at depots by status, saved once a day — click a point for the tanks" : "Tanks at a depot by status — click a number for the tanks";
   if (g) renderInvTrend(); else renderInv();   // a chart needs a visible box
@@ -3171,7 +3173,7 @@ async function loadInvTrend() {
   renderInvTrend();
 }
 function invTrendPoints() {
-  const days = invT.data?.days || [], key = (d) => (invT.per === "month" ? d.slice(0, 7) : invT.per === "week" ? mondayOf(d) : d);
+  const days = (invT.data?.days || []).filter(([d]) => (!invT.from || d >= invT.from) && (!invT.to || d <= invT.to)), key = (d) => (invT.per === "month" ? d.slice(0, 7) : invT.per === "week" ? mondayOf(d) : d);
   const last = new Map(); for (const day of days) last.set(key(day[0]), day);   // days come oldest first: the last one of each period wins
   return [...last].map(([k, [date, rows]]) => {
     const n = Object.fromEntries(INV_COLS.map(([c]) => [c, 0]));
@@ -3181,8 +3183,12 @@ function invTrendPoints() {
 }
 function renderInvTrend() {
   for (const b of $("invTrendPer").children) b.setAttribute("aria-pressed", b.dataset.p === invT.per);
+  const saved = (invT.data?.days || []).map((d) => d[0]);
+  for (const id of ["invTrendFrom", "invTrendTo"]) { $(id).min = saved[0] || ""; $(id).max = saved[saved.length - 1] || ""; }
+  $("invTrendFrom").value = invT.from; $("invTrendTo").value = invT.to;
   const pts = invTrendPoints();
   $("invTrendFoot").textContent = invT.err ? "Could not load the trend: " + invT.err
+    : !pts.length && saved.length ? "No saved days between these dates — saving started 26 Nov 2026. Clear the dates to see every saved day."
     : `Saving started 26 Nov 2026 — one point per day from then on${pts.length ? ` (${n0((invT.data?.days || []).length)} day${(invT.data?.days || []).length === 1 ? "" : "s"} saved so far)` : ""}. `
       + "Each day keeps its latest picture; a day is saved when the inventory is first opened that day (and again after a newer sync). "
       + "Weekly / Monthly show the last saved day of each week / month. Same columns as the cards above; Country filter applies.";
@@ -3225,6 +3231,8 @@ async function openInvTrendTanks(p, [, label, , cols]) {
     openTanks({ title: `${label} on ${shortDate(p.date)}${inv.country ? ` · ${inv.country}` : ""} — ${n0(set.size)} tanks (details as they are now)`, allPrincipals: true, test: (t) => set.has(t.c) });
   } catch (e) { if (e.message !== "signed out" && e.message !== "no access") { invT.err = e.message; renderInvTrend(); } }
 }
+$("invTrendFrom").onchange = (e) => { invT.from = e.target.value; if (invT.to && invT.from > invT.to) invT.to = invT.from; renderInvTrend(); };
+$("invTrendTo").onchange = (e) => { invT.to = e.target.value; if (invT.from && invT.to && invT.to < invT.from) invT.from = invT.to; renderInvTrend(); };
 $("invTrendPer").onclick = (e) => { const b = e.target.closest("button[data-p]"); if (!b) return; invT.per = b.dataset.p; renderInvTrend(); };
 
 function renderInv() {
